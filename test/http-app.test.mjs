@@ -72,3 +72,41 @@ test("maps unavailable action attempts to a stable conflict response", async (t)
   assert.equal(response.status, 409);
   assert.deepEqual(await response.json(), { error: "entry_unavailable" });
 });
+
+test("protects and schedules the restart endpoint", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+
+  let restartCount = 0;
+  const service = {
+    listEntries: async () => [],
+    registerFromPicker: async () => null,
+    performAction: async () => {},
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const server = createHttpServer(
+    service,
+    staticDirectory,
+    () => {},
+    () => {
+      restartCount += 1;
+    },
+  );
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const blocked = await fetch(`${baseUrl}/api/restart`, { method: "POST" });
+  assert.equal(blocked.status, 403);
+
+  const accepted = await fetch(`${baseUrl}/api/restart`, {
+    method: "POST",
+    headers: { Origin: baseUrl },
+  });
+  assert.equal(accepted.status, 202);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(restartCount, 1);
+});

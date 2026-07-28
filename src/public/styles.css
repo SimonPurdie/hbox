@@ -246,6 +246,11 @@ button.toolbar-icon:disabled {
   color: rgb(27 43 67 / 38%);
 }
 
+.config-menu {
+  top: 58px;
+  right: 20px;
+}
+
 .search-shell {
   position: fixed;
   z-index: 15;

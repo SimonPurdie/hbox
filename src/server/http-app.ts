@@ -22,6 +22,7 @@ export function createHttpServer(
   service: EntryService,
   staticDirectory: string,
   error: (message: string) => void = console.error,
+  restart?: () => void,
 ): Server {
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -45,6 +46,19 @@ export function createHttpServer(
       if (request.method === "POST") {
         if (!hasAllowedOrigin(request)) {
           sendJson(response, 403, { error: "invalid_origin" });
+          return;
+        }
+
+        if (url.pathname === "/api/restart") {
+          if (!restart) {
+            sendJson(response, 501, { error: "restart_unavailable" });
+            return;
+          }
+          response.writeHead(202, {
+            "Content-Length": "0",
+            Connection: "close",
+          });
+          response.end(() => setImmediate(restart));
           return;
         }
 

@@ -15,14 +15,18 @@
       <button id="add-entry" class="toolbar-icon add-entry" type="button" aria-label="Add Entry">
         <img src="/assets/icons/add.svg" alt="">
       </button>
-      <span class="toolbar-icon config-icon" aria-hidden="true">
+      <button id="open-config" class="toolbar-icon config-icon" type="button" aria-label="Open Config" aria-controls="config-menu" aria-expanded="false">
         <img src="/assets/icons/config.svg" alt="">
-      </span>
+      </button>
     </div>
 
     <div id="context-menu" class="context-menu" role="menu" hidden>
       <button type="button" role="menuitem" data-action="folder">Open folder</button>
       <button type="button" role="menuitem" data-action="terminal">Open terminal</button>
+    </div>
+
+    <div id="config-menu" class="context-menu config-menu" role="menu" hidden>
+      <button id="restart-server" type="button" role="menuitem">Restart</button>
     </div>
 
     <div id="search-shell" class="search-shell" hidden>

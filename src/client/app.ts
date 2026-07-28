@@ -17,7 +17,11 @@ const tagIconUrls: Record<TagIcon, string> = {
 
 const desktop = requiredElement<HTMLElement>("desktop");
 const addButton = requiredElement<HTMLButtonElement>("add-entry");
+const configButton = requiredElement<HTMLButtonElement>("open-config");
 const contextMenu = requiredElement<HTMLElement>("context-menu");
+const configMenu = requiredElement<HTMLElement>("config-menu");
+const restartButton =
+  requiredElement<HTMLButtonElement>("restart-server");
 const searchShell = requiredElement<HTMLElement>("search-shell");
 const searchInput = requiredElement<HTMLInputElement>("search");
 
@@ -25,6 +29,8 @@ let entries: ClientEntry[] = [];
 let contextEntry: ClientEntry | null = null;
 
 addButton.addEventListener("click", () => void addEntry());
+configButton.addEventListener("click", toggleConfigMenu);
+restartButton.addEventListener("click", () => void restartServer());
 searchInput.addEventListener("input", () => {
   if (!searchInput.value) {
     hideSearch();
@@ -48,12 +54,23 @@ document.addEventListener("pointerdown", (event) => {
   if (!contextMenu.hidden && !contextMenu.contains(target)) {
     closeContextMenu();
   }
+  if (
+    !configMenu.hidden &&
+    !configMenu.contains(target) &&
+    !configButton.contains(target)
+  ) {
+    closeConfigMenu();
+  }
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (!contextMenu.hidden) {
       closeContextMenu();
+      return;
+    }
+    if (!configMenu.hidden) {
+      closeConfigMenu();
       return;
     }
     if (!searchShell.hidden) {
@@ -66,6 +83,7 @@ document.addEventListener("keydown", (event) => {
 
   if (
     !contextMenu.hidden ||
+    !configMenu.hidden ||
     event.ctrlKey ||
     event.metaKey ||
     event.altKey ||
@@ -84,7 +102,10 @@ document.addEventListener("keydown", (event) => {
   renderEntries();
 });
 
-window.addEventListener("resize", closeContextMenu);
+window.addEventListener("resize", () => {
+  closeContextMenu();
+  closeConfigMenu();
+});
 void loadEntries();
 
 async function loadEntries(): Promise<void> {
@@ -200,6 +221,7 @@ function createEntryIcon(entry: ClientEntry): HTMLElement | null {
 }
 
 function openContextMenu(entry: ClientEntry, x: number, y: number): void {
+  closeConfigMenu();
   contextEntry = entry;
   for (const button of contextMenu.querySelectorAll<HTMLButtonElement>(
     "button[data-action]",
@@ -223,6 +245,58 @@ function openContextMenu(entry: ClientEntry, x: number, y: number): void {
 function closeContextMenu(): void {
   contextMenu.hidden = true;
   contextEntry = null;
+}
+
+function toggleConfigMenu(): void {
+  const shouldOpen = configMenu.hidden;
+  closeContextMenu();
+  configMenu.hidden = !shouldOpen;
+  configButton.setAttribute("aria-expanded", String(shouldOpen));
+  if (shouldOpen) {
+    restartButton.focus();
+  }
+}
+
+function closeConfigMenu(): void {
+  configMenu.hidden = true;
+  configButton.setAttribute("aria-expanded", "false");
+}
+
+async function restartServer(): Promise<void> {
+  restartButton.disabled = true;
+  try {
+    const response = await fetch("/api/restart", { method: "POST" });
+    if (!response.ok) {
+      throw new Error(`Restart failed with status ${response.status}.`);
+    }
+    await waitForServer();
+    window.location.reload();
+  } catch (error) {
+    console.error(error);
+    restartButton.disabled = false;
+  }
+}
+
+async function waitForServer(): Promise<void> {
+  await delay(300);
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      const response = await fetch("/api/entries", {
+        cache: "no-store",
+      });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // The old listener is closed while its replacement starts.
+    }
+    await delay(250);
+  }
+  throw new Error("HBOX did not return after restart.");
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 async function runAction(
