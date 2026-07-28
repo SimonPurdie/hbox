@@ -18,8 +18,8 @@ Open <http://127.0.0.1:4269>. HBOX does not install startup integration or open
 the browser automatically. `npm start` performs a fresh production build before
 starting the server.
 
-The Config menu can restart the running server without access to its original
-terminal.
+The Config menu can rebuild and restart the running server without access to
+its original terminal.
 
 Right-click an Entry and select **Manage Entry** to view its location, metadata,
 and other diagnostics. **Remove Entry** unregisters it from HBOX without

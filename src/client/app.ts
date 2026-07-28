@@ -421,7 +421,8 @@ async function restartServer(): Promise<void> {
     if (!response.ok) {
       throw new Error(`Restart failed with status ${response.status}.`);
     }
-    await waitForServer();
+    const current = (await response.json()) as { instanceId: string };
+    await waitForServer(current.instanceId);
     window.location.reload();
   } catch (error) {
     console.error(error);
@@ -429,15 +430,18 @@ async function restartServer(): Promise<void> {
   }
 }
 
-async function waitForServer(): Promise<void> {
+async function waitForServer(previousInstanceId: string): Promise<void> {
   await delay(300);
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      const response = await fetch("/api/entries", {
+      const response = await fetch("/api/status", {
         cache: "no-store",
       });
       if (response.ok) {
-        return;
+        const status = (await response.json()) as { instanceId: string };
+        if (status.instanceId !== previousInstanceId) {
+          return;
+        }
       }
     } catch {
       // The old listener is closed while its replacement starts.

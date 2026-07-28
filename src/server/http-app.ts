@@ -24,6 +24,7 @@ export function createHttpServer(
   staticDirectory: string,
   error: (message: string) => void = console.error,
   restart?: () => void,
+  instanceId: string = `${process.pid}`,
 ): Server {
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -44,6 +45,11 @@ export function createHttpServer(
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/api/status") {
+        sendJson(response, 200, { instanceId });
+        return;
+      }
+
       if (request.method === "POST" || request.method === "DELETE") {
         if (!hasAllowedOrigin(request)) {
           sendJson(response, 403, { error: "invalid_origin" });
@@ -57,11 +63,14 @@ export function createHttpServer(
             sendJson(response, 501, { error: "restart_unavailable" });
             return;
           }
+          const body = Buffer.from(JSON.stringify({ instanceId }));
           response.writeHead(202, {
-            "Content-Length": "0",
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Length": body.byteLength,
+            "Cache-Control": "no-store",
             Connection: "close",
           });
-          response.end(() => setImmediate(restart));
+          response.end(body, () => setImmediate(restart));
           return;
         }
 

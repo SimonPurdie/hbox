@@ -91,6 +91,7 @@ test("protects and schedules the restart endpoint", async (t) => {
     () => {
       restartCount += 1;
     },
+    "test-instance",
   );
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -107,8 +108,13 @@ test("protects and schedules the restart endpoint", async (t) => {
     headers: { Origin: baseUrl },
   });
   assert.equal(accepted.status, 202);
+  assert.deepEqual(await accepted.json(), { instanceId: "test-instance" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(restartCount, 1);
+
+  const status = await fetch(`${baseUrl}/api/status`);
+  assert.equal(status.status, 200);
+  assert.deepEqual(await status.json(), { instanceId: "test-instance" });
 });
 
 test("serves Entry details and protects removal by origin", async (t) => {
