@@ -138,6 +138,15 @@ test("reports the canonical built-in icon source in details", async (t) => {
   const registration = await service.registerFromPicker();
   const details = await service.getEntryDetails(registration.entry.id);
   assert.deepEqual(details.iconSource, { kind: "tag", tag: "agent" });
+
+  await writeFile(
+    path.join(project, ".hbox", "entry.json"),
+    JSON.stringify({ tags: ["unknown"] }),
+  );
+  assert.deepEqual(
+    (await service.getEntryDetails(registration.entry.id)).iconSource,
+    { kind: "fallback" },
+  );
 });
 
 test("caches normalized icons and remembers invalid source signatures", async (t) => {
@@ -186,7 +195,7 @@ test("caches normalized icons and remembers invalid source signatures", async (t
   assert.equal(invalid[0].hasCustomIcon, false);
   assert.deepEqual(
     (await service.getEntryDetails(entryId)).iconSource,
-    { kind: "tag", tag: "tool" },
+    { kind: "fallback" },
   );
   await assert.rejects(service.readCachedIcon(entryId), /Entry not found/);
   assert.equal(warnings.length, 1);

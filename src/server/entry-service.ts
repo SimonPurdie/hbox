@@ -428,7 +428,7 @@ function toEntryDetails(
       ? { kind: "custom" }
       : tagIcon
         ? { kind: "tag", tag: tagIcon }
-        : { kind: "none" },
+        : { kind: "fallback" },
   };
 }
 

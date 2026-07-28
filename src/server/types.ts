@@ -2,11 +2,12 @@ export const REGISTRY_VERSION = 1 as const;
 
 export const TAG_ICON_PRIORITY = [
   "agent",
-  "app",
-  "code",
-  "script",
-  "tool",
+  "gamedev",
+  "browser-extension",
+  "desktop",
   "web",
+  "script",
+  "data",
 ] as const;
 
 export type TagIcon = (typeof TAG_ICON_PRIORITY)[number];
@@ -63,7 +64,7 @@ export interface ClientEntry {
 export type IconSource =
   | { kind: "custom" }
   | { kind: "tag"; tag: TagIcon }
-  | { kind: "none" };
+  | { kind: "fallback" };
 
 export interface EntryDetails extends ClientEntry {
   environment:

@@ -48,12 +48,22 @@ test("rejects unsafe, linked, malformed, and unsupported SVG content", () => {
 });
 
 test("all built-in tag icons use only the canonical Entry icon paint", async () => {
-  const tags = ["agent", "app", "code", "script", "tool", "web"];
-  for (const tag of tags) {
+  const icons = [
+    "tag-agent",
+    "tag-gamedev",
+    "tag-browser-extension",
+    "tag-desktop",
+    "tag-web",
+    "tag-script",
+    "tag-data",
+    "fallback",
+  ];
+  for (const icon of icons) {
     const source = await readFile(
-      path.resolve(`src/public/assets/icons/tag-${tag}.svg`),
+      path.resolve(`src/public/assets/icons/${icon}.svg`),
       "utf8",
     );
+    assert.doesNotThrow(() => normalizeEntryIcon(source));
     assert.match(source, /viewBox="0 0 24 24"/);
     const paints = [
       ...source.matchAll(/\b(?:fill|stroke)="([^"]+)"/g),
@@ -63,7 +73,7 @@ test("all built-in tag icons use only the canonical Entry icon paint", async () 
       paints.every(
         (paint) => paint === "none" || paint === ENTRY_ICON_COLOR,
       ),
-      `${tag} contains a non-canonical paint`,
+      `${icon} contains a non-canonical paint`,
     );
   }
 });

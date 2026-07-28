@@ -11,11 +11,12 @@ import {
 
 const tagIconUrls: Record<TagIcon, string> = {
   agent: "/assets/icons/tag-agent.svg",
-  app: "/assets/icons/tag-app.svg",
-  code: "/assets/icons/tag-code.svg",
-  script: "/assets/icons/tag-script.svg",
-  tool: "/assets/icons/tag-tool.svg",
+  gamedev: "/assets/icons/tag-gamedev.svg",
+  "browser-extension": "/assets/icons/tag-browser-extension.svg",
+  desktop: "/assets/icons/tag-desktop.svg",
   web: "/assets/icons/tag-web.svg",
+  script: "/assets/icons/tag-script.svg",
+  data: "/assets/icons/tag-data.svg",
 };
 
 const desktop = requiredElement<HTMLElement>("desktop");
@@ -312,7 +313,7 @@ function populateEntryDetails(entry: EntryDetails): void {
       ? "Custom .hbox/icon.svg"
       : entry.iconSource.kind === "tag"
         ? `Built-in tag · ${entry.iconSource.tag}`
-        : "None";
+        : "Fallback";
   detailId.textContent = entry.id;
 
   if (entry.tags.length === 0) {
@@ -468,11 +469,10 @@ function createEntryIcon(entry: ClientEntry): HTMLElement | null {
   }
 
   const tagIcon = tagIconFor(entry);
-  if (!tagIcon) {
-    return null;
-  }
   const image = document.createElement("img");
-  image.src = tagIconUrls[tagIcon];
+  image.src = tagIcon
+    ? tagIconUrls[tagIcon]
+    : "/assets/icons/fallback.svg";
   image.alt = "";
   icon.append(image);
   return icon;

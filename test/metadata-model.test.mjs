@@ -55,8 +55,18 @@ test("tag icon selection uses canonical priority rather than entry order", () =>
     pinnedPosition: null,
   };
 
-  assert.equal(tagIconFor({ ...base, tags: ["web", "tool", "agent"] }), "agent");
-  assert.equal(tagIconFor({ ...base, tags: ["script", "code"] }), "code");
+  assert.equal(
+    tagIconFor({ ...base, tags: ["web", "desktop", "agent"] }),
+    "agent",
+  );
+  assert.equal(
+    tagIconFor({ ...base, tags: ["script", "data", "gamedev"] }),
+    "gamedev",
+  );
+  assert.equal(
+    tagIconFor({ ...base, tags: ["data", "browser-extension"] }),
+    "browser-extension",
+  );
   assert.equal(tagIconFor({ ...base, tags: ["unknown"] }), null);
   assert.equal(
     tagIconFor({ ...base, tags: ["agent"], hasCustomIcon: true }),

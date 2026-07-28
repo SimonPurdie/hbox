@@ -39,7 +39,7 @@ A registered folder can contain `.hbox/entry.json`:
 ```json
 {
   "name": "My project",
-  "tags": ["code", "tool"],
+  "tags": ["desktop", "git"],
   "defaultAction": "terminal"
 }
 ```
@@ -48,14 +48,16 @@ All fields are optional. `defaultAction` can be `folder` or `terminal`. A custom
 `.hbox/icon.svg` takes precedence over a built-in tag icon.
 
 Built-in tag icons use this global priority, regardless of the order of an
-Entry's tags:
+Entry's tags. Entries without a custom or applicable tag icon use the fallback
+icon.
 
 1. `agent`
-2. `app`
-3. `code`
-4. `script`
-5. `tool`
-6. `web`
+2. `gamedev`
+3. `browser-extension`
+4. `desktop`
+5. `web`
+6. `script`
+7. `data`
 
 To add a WSL-native folder, browse to its
 `\\wsl.localhost\<distribution>\...` location in the Add dialog.

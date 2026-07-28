@@ -136,7 +136,7 @@ test("serves Entry details and protects removal by origin", async (t) => {
     environment: { kind: "wsl", distribution: "Ubuntu" },
     location: "/home/simon/example",
     metadataStatus: "folder_unavailable",
-    iconSource: { kind: "tag", tag: "tool" },
+    iconSource: { kind: "fallback" },
   };
   const service = {
     listEntries: async () => [],
