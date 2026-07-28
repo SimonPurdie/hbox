@@ -8,6 +8,7 @@ import {
   readEntryMetadata,
 } from "../dist/server/metadata.js";
 import {
+  mergeVisiblePinOrder,
   matchesEntry,
   tagIconFor,
 } from "../dist/public/assets/model.js";
@@ -51,6 +52,7 @@ test("tag icon selection uses canonical priority rather than entry order", () =>
     defaultAction: null,
     available: true,
     hasCustomIcon: false,
+    pinnedPosition: null,
   };
 
   assert.equal(tagIconFor({ ...base, tags: ["web", "tool", "agent"] }), "agent");
@@ -70,12 +72,27 @@ test("search matches case-insensitive name and tag substrings", () => {
     defaultAction: null,
     available: false,
     hasCustomIcon: false,
+    pinnedPosition: null,
   };
 
   assert.equal(matchesEntry(entry, "EXEC"), true);
   assert.equal(matchesEntry(entry, "web"), true);
   assert.equal(matchesEntry(entry, "script"), false);
   assert.equal(matchesEntry(entry, ""), true);
+});
+
+test("merges filtered pin reordering without moving hidden pins", () => {
+  assert.deepEqual(
+    mergeVisiblePinOrder(
+      ["hidden-a", "visible-a", "hidden-b", "visible-b"],
+      ["visible-b", "visible-a"],
+    ),
+    ["hidden-a", "visible-b", "hidden-b", "visible-a"],
+  );
+  assert.throws(
+    () => mergeVisiblePinOrder(["a", "b"], ["a", "missing"]),
+    /does not match/,
+  );
 });
 
 test("reports loaded, missing, and invalid metadata states", async (t) => {

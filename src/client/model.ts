@@ -23,6 +23,7 @@ export interface ClientEntry {
   defaultAction: ActionName | null;
   available: boolean;
   hasCustomIcon: boolean;
+  pinnedPosition: number | null;
 }
 
 export type IconSource =
@@ -59,5 +60,23 @@ export function matchesEntry(entry: ClientEntry, query: string): boolean {
     entry.tags.some((tag) =>
       tag.toLocaleLowerCase("en-US").includes(normalized),
     )
+  );
+}
+
+export function mergeVisiblePinOrder(
+  currentOrder: readonly string[],
+  visibleOrder: readonly string[],
+): string[] {
+  const visible = new Set(visibleOrder);
+  if (
+    visible.size !== visibleOrder.length ||
+    visibleOrder.some((id) => !currentOrder.includes(id))
+  ) {
+    throw new Error("Visible pin order does not match the pinned Entries.");
+  }
+
+  let visibleIndex = 0;
+  return currentOrder.map((id) =>
+    visible.has(id) ? visibleOrder[visibleIndex++]! : id,
   );
 }

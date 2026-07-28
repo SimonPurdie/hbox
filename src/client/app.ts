@@ -1,4 +1,5 @@
 import {
+  mergeVisiblePinOrder,
   matchesEntry,
   tagIconFor,
   type ActionName,
@@ -18,9 +19,14 @@ const tagIconUrls: Record<TagIcon, string> = {
 };
 
 const desktop = requiredElement<HTMLElement>("desktop");
+const pinnedSection = requiredElement<HTMLElement>("pinned-section");
+const pinnedEntries = requiredElement<HTMLElement>("pinned-entries");
+const allSection = requiredElement<HTMLElement>("all-section");
+const allEntries = requiredElement<HTMLElement>("all-entries");
 const addButton = requiredElement<HTMLButtonElement>("add-entry");
 const configButton = requiredElement<HTMLButtonElement>("open-config");
 const contextMenu = requiredElement<HTMLElement>("context-menu");
+const pinEntryButton = requiredElement<HTMLButtonElement>("pin-entry");
 const manageEntryButton =
   requiredElement<HTMLButtonElement>("manage-entry");
 const configMenu = requiredElement<HTMLElement>("config-menu");
@@ -50,10 +56,19 @@ let entries: ClientEntry[] = [];
 let contextEntry: ClientEntry | null = null;
 let managedEntry: EntryDetails | null = null;
 let detailsOrigin: HTMLElement | null = null;
+let draggedPinnedElement: HTMLButtonElement | null = null;
 
 addButton.addEventListener("click", () => void addEntry());
 configButton.addEventListener("click", toggleConfigMenu);
 restartButton.addEventListener("click", () => void restartServer());
+pinEntryButton.addEventListener("click", () => {
+  const entry = contextEntry;
+  if (!entry) {
+    return;
+  }
+  closeContextMenu();
+  void setEntryPinned(entry, entry.pinnedPosition === null);
+});
 manageEntryButton.addEventListener("click", () => {
   if (contextEntry) {
     void openEntryDetails(contextEntry);
@@ -90,6 +105,54 @@ contextMenu.addEventListener("click", (event) => {
   }
   const action = target.dataset.action as ActionName;
   void runAction(contextEntry, action);
+});
+
+pinnedEntries.addEventListener("dragover", (event) => {
+  if (!draggedPinnedElement) {
+    return;
+  }
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  const target = (event.target as HTMLElement).closest<HTMLButtonElement>(
+    ".entry",
+  );
+  if (!target || target === draggedPinnedElement) {
+    if (!target) {
+      pinnedEntries.append(draggedPinnedElement);
+    }
+    return;
+  }
+
+  const bounds = target.getBoundingClientRect();
+  pinnedEntries.insertBefore(
+    draggedPinnedElement,
+    event.clientX < bounds.left + bounds.width / 2
+      ? target
+      : target.nextSibling,
+  );
+});
+
+pinnedEntries.addEventListener("drop", (event) => {
+  if (!draggedPinnedElement) {
+    return;
+  }
+  event.preventDefault();
+  const dragged = draggedPinnedElement;
+  draggedPinnedElement = null;
+  dragged.classList.remove("dragging");
+  void persistVisiblePinOrder();
+});
+
+pinnedEntries.addEventListener("dragend", () => {
+  if (!draggedPinnedElement) {
+    return;
+  }
+  draggedPinnedElement.classList.remove("dragging");
+  draggedPinnedElement = null;
+  renderEntries();
 });
 
 document.addEventListener("pointerdown", (event) => {
@@ -181,6 +244,26 @@ async function addEntry(): Promise<void> {
     console.error(error);
   } finally {
     addButton.disabled = false;
+  }
+}
+
+async function setEntryPinned(
+  entry: ClientEntry,
+  pinned: boolean,
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `/api/entries/${encodeURIComponent(entry.id)}/pin`,
+      { method: pinned ? "POST" : "DELETE" },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Entry pin update failed with status ${response.status}.`,
+      );
+    }
+    await loadEntries();
+  } catch (error) {
+    console.error(error);
   }
 }
 
@@ -294,58 +377,81 @@ function renderEntries(): void {
   const visibleEntries = entries.filter((entry) =>
     matchesEntry(entry, searchInput.value),
   );
-  const fragment = document.createDocumentFragment();
+  const visiblePinned = visibleEntries
+    .filter((entry) => entry.pinnedPosition !== null)
+    .sort((left, right) => left.pinnedPosition! - right.pinnedPosition!);
 
-  for (const entry of visibleEntries) {
-    const element = document.createElement("button");
-    element.type = "button";
-    element.className = `entry${entry.available ? "" : " unavailable"}`;
-    element.dataset.entryId = entry.id;
-    element.setAttribute(
-      "aria-label",
-      entry.available ? entry.name : `${entry.name}, unavailable`,
-    );
-    if (!entry.available) {
-      element.setAttribute("aria-disabled", "true");
-    }
+  pinnedEntries.replaceChildren(
+    ...visiblePinned.map((entry) => createEntryElement(entry, true)),
+  );
+  allEntries.replaceChildren(
+    ...visibleEntries.map((entry) => createEntryElement(entry, false)),
+  );
+  pinnedSection.hidden = visiblePinned.length === 0;
+  allSection.hidden = visibleEntries.length === 0;
+}
 
-    const folder = document.createElement("span");
-    folder.className = "folder";
-    const folderImage = document.createElement("img");
-    folderImage.className = "folder-shape";
-    folderImage.src = "/assets/icons/folder.svg";
-    folderImage.alt = "";
-    folder.append(folderImage);
-    const icon = createEntryIcon(entry);
-    if (icon) {
-      folder.append(icon);
-    }
-
-    const label = document.createElement("span");
-    label.className = "entry-label";
-    label.textContent = entry.name;
-
-    element.append(folder, label);
-    element.addEventListener("click", () => {
-      if (!entry.available) {
-        return;
-      }
-      if (entry.defaultAction) {
-        void runAction(entry, entry.defaultAction);
-      } else {
-        const bounds = element.getBoundingClientRect();
-        openContextMenu(entry, bounds.left + 32, bounds.top + 70);
-      }
-    });
-    element.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      openContextMenu(entry, event.clientX, event.clientY);
-    });
-
-    fragment.append(element);
+function createEntryElement(
+  entry: ClientEntry,
+  pinnedCopy: boolean,
+): HTMLButtonElement {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = `entry${entry.available ? "" : " unavailable"}`;
+  element.dataset.entryId = entry.id;
+  element.draggable = pinnedCopy;
+  element.setAttribute(
+    "aria-label",
+    entry.available ? entry.name : `${entry.name}, unavailable`,
+  );
+  if (!entry.available) {
+    element.setAttribute("aria-disabled", "true");
   }
 
-  desktop.replaceChildren(fragment);
+  const folder = document.createElement("span");
+  folder.className = "folder";
+  const folderImage = document.createElement("img");
+  folderImage.className = "folder-shape";
+  folderImage.src = "/assets/icons/folder.svg";
+  folderImage.alt = "";
+  folder.append(folderImage);
+  const icon = createEntryIcon(entry);
+  if (icon) {
+    folder.append(icon);
+  }
+
+  const label = document.createElement("span");
+  label.className = "entry-label";
+  label.textContent = entry.name;
+
+  element.append(folder, label);
+  element.addEventListener("click", () => {
+    if (!entry.available) {
+      return;
+    }
+    if (entry.defaultAction) {
+      void runAction(entry, entry.defaultAction);
+    } else {
+      const bounds = element.getBoundingClientRect();
+      openContextMenu(entry, bounds.left + 32, bounds.top + 70);
+    }
+  });
+  element.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    openContextMenu(entry, event.clientX, event.clientY);
+  });
+  if (pinnedCopy) {
+    element.addEventListener("dragstart", (event) => {
+      draggedPinnedElement = element;
+      element.classList.add("dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", entry.id);
+      }
+    });
+  }
+
+  return element;
 }
 
 function createEntryIcon(entry: ClientEntry): HTMLElement | null {
@@ -380,6 +486,8 @@ function openContextMenu(entry: ClientEntry, x: number, y: number): void {
   )) {
     button.disabled = !entry.available;
   }
+  pinEntryButton.textContent =
+    entry.pinnedPosition === null ? "Pin to top" : "Unpin from top";
 
   contextMenu.hidden = false;
   const bounds = contextMenu.getBoundingClientRect();
@@ -392,6 +500,39 @@ function openContextMenu(entry: ClientEntry, x: number, y: number): void {
     margin,
     Math.min(y, window.innerHeight - bounds.height - margin),
   )}px`;
+}
+
+async function persistVisiblePinOrder(): Promise<void> {
+  const currentOrder = entries
+    .filter((entry) => entry.pinnedPosition !== null)
+    .sort((left, right) => left.pinnedPosition! - right.pinnedPosition!)
+    .map((entry) => entry.id);
+  const visibleOrder = [
+    ...pinnedEntries.querySelectorAll<HTMLElement>("[data-entry-id]"),
+  ].map((element) => element.dataset.entryId!);
+  const nextOrder = mergeVisiblePinOrder(currentOrder, visibleOrder);
+  const positions = new Map(
+    nextOrder.map((entryId, index) => [entryId, index]),
+  );
+  entries = entries.map((entry) => ({
+    ...entry,
+    pinnedPosition: positions.get(entry.id) ?? null,
+  }));
+  renderEntries();
+
+  try {
+    const response = await fetch("/api/pins/order", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entryIds: nextOrder }),
+    });
+    if (!response.ok) {
+      throw new Error(`Pin reorder failed with status ${response.status}.`);
+    }
+  } catch (error) {
+    console.error(error);
+    await loadEntries();
+  }
 }
 
 function closeContextMenu(): void {

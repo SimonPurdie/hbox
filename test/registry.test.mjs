@@ -45,3 +45,40 @@ test("rejects registry IDs that could escape the icon cache", async (t) => {
 
   await assert.rejects(registry.load(), /invalid structure/);
 });
+
+test("loads old registries and normalizes their pinned Entry IDs", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-registry-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const registry = new Registry(root);
+  const entryId = "5f1801d8-039e-4d66-8691-b01cbe293fdd";
+  const entry = {
+    id: entryId,
+    location: { kind: "windows", path: "E:\\Project" },
+    lastKnown: {
+      name: "Project",
+      tags: [],
+      defaultAction: null,
+      hasCustomIcon: false,
+    },
+  };
+
+  await writeFile(
+    registry.registryPath,
+    JSON.stringify({ version: 1, entries: [entry] }),
+  );
+  assert.deepEqual(await registry.load(), {
+    version: 1,
+    entries: [entry],
+    pinnedEntryIds: [],
+  });
+
+  await writeFile(
+    registry.registryPath,
+    JSON.stringify({
+      version: 1,
+      entries: [entry],
+      pinnedEntryIds: [entryId, entryId, "missing"],
+    }),
+  );
+  assert.deepEqual((await registry.load()).pinnedEntryIds, [entryId]);
+});

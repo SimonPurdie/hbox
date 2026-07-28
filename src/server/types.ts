@@ -47,6 +47,7 @@ export interface StoredEntry {
 export interface RegistryData {
   version: typeof REGISTRY_VERSION;
   entries: StoredEntry[];
+  pinnedEntryIds: string[];
 }
 
 export interface ClientEntry {
@@ -56,6 +57,7 @@ export interface ClientEntry {
   defaultAction: ActionName | null;
   available: boolean;
   hasCustomIcon: boolean;
+  pinnedPosition: number | null;
 }
 
 export type IconSource =

@@ -10,6 +10,7 @@ import {
   EntryNotFoundError,
   EntryService,
   EntryUnavailableError,
+  InvalidPinOrderError,
 } from "./entry-service.js";
 import { PickerBusyError } from "./picker.js";
 import type { ActionName } from "./types.js";
@@ -17,7 +18,11 @@ import type { ActionName } from "./types.js";
 const ACTION_PATTERN =
   /^\/api\/entries\/([^/]+)\/actions\/(folder|terminal)$/;
 const ICON_PATTERN = /^\/api\/entries\/([^/]+)\/icon$/;
+const PIN_PATTERN = /^\/api\/entries\/([^/]+)\/pin$/;
 const ENTRY_PATTERN = /^\/api\/entries\/([^/]+)$/;
+const MAX_JSON_BODY_BYTES = 64 * 1024;
+
+class InvalidRequestError extends Error {}
 
 export function createHttpServer(
   service: EntryService,
@@ -50,7 +55,11 @@ export function createHttpServer(
         return;
       }
 
-      if (request.method === "POST" || request.method === "DELETE") {
+      if (
+        request.method === "POST" ||
+        request.method === "PUT" ||
+        request.method === "DELETE"
+      ) {
         if (!hasAllowedOrigin(request)) {
           sendJson(response, 403, { error: "invalid_origin" });
           return;
@@ -84,6 +93,14 @@ export function createHttpServer(
           return;
         }
 
+        const pinMatch = PIN_PATTERN.exec(url.pathname);
+        if (pinMatch) {
+          const entryId = decodeURIComponent(pinMatch[1] ?? "");
+          await service.pinEntry(entryId);
+          response.writeHead(204).end();
+          return;
+        }
+
         const actionMatch = ACTION_PATTERN.exec(url.pathname);
         if (actionMatch) {
           const entryId = decodeURIComponent(actionMatch[1] ?? "");
@@ -94,7 +111,21 @@ export function createHttpServer(
         }
       }
 
+      if (request.method === "PUT" && url.pathname === "/api/pins/order") {
+        await service.reorderPinnedEntries(await readPinOrder(request));
+        response.writeHead(204).end();
+        return;
+      }
+
       if (request.method === "DELETE") {
+        const pinMatch = PIN_PATTERN.exec(url.pathname);
+        if (pinMatch) {
+          const entryId = decodeURIComponent(pinMatch[1] ?? "");
+          await service.unpinEntry(entryId);
+          response.writeHead(204).end();
+          return;
+        }
+
         const entryMatch = ENTRY_PATTERN.exec(url.pathname);
         if (entryMatch) {
           const entryId = decodeURIComponent(entryMatch[1] ?? "");
@@ -146,11 +177,50 @@ export function createHttpServer(
         sendJson(response, 409, { error: "picker_busy" });
         return;
       }
+      if (
+        caught instanceof InvalidRequestError ||
+        caught instanceof InvalidPinOrderError
+      ) {
+        sendJson(response, 400, { error: "invalid_pin_order" });
+        return;
+      }
 
       error(caught instanceof Error ? caught.stack ?? caught.message : String(caught));
       sendJson(response, 500, { error: "internal_error" });
     }
   });
+}
+
+async function readPinOrder(
+  request: IncomingMessage,
+): Promise<string[]> {
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > MAX_JSON_BODY_BYTES) {
+      throw new InvalidRequestError("Request body is too large.");
+    }
+    chunks.push(buffer);
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new InvalidRequestError("Request body is not valid JSON.");
+  }
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("entryIds" in value) ||
+    !Array.isArray(value.entryIds) ||
+    !value.entryIds.every((entryId) => typeof entryId === "string")
+  ) {
+    throw new InvalidRequestError("Pinned Entry IDs are invalid.");
+  }
+  return value.entryIds;
 }
 
 function hasAllowedOrigin(request: IncomingMessage): boolean {

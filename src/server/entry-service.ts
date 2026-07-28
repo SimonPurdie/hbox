@@ -42,6 +42,12 @@ export class EntryUnavailableError extends Error {
   }
 }
 
+export class InvalidPinOrderError extends Error {
+  constructor() {
+    super("Pinned Entry order does not match the registry.");
+  }
+}
+
 export interface RegistrationResult {
   entry: ClientEntry;
   created: boolean;
@@ -62,6 +68,9 @@ export class EntryService {
   async listEntries(): Promise<ClientEntry[]> {
     const data = await this.registry.load();
     let registryChanged = false;
+    const pinnedPositions = new Map(
+      data.pinnedEntryIds.map((entryId, index) => [entryId, index]),
+    );
 
     const entries = await Promise.all(
       data.entries.map(async (entry) => {
@@ -70,7 +79,11 @@ export class EntryService {
           entry.lastKnown = refreshed.entry.lastKnown;
           registryChanged = true;
         }
-        return toClientEntry(refreshed.entry, refreshed.available);
+        return toClientEntry(
+          refreshed.entry,
+          refreshed.available,
+          pinnedPositions.get(entry.id) ?? null,
+        );
       }),
     );
 
@@ -102,7 +115,11 @@ export class EntryService {
         await this.registry.save(data);
       }
       return {
-        entry: toClientEntry(refreshed.entry, refreshed.available),
+        entry: toClientEntry(
+          refreshed.entry,
+          refreshed.available,
+          pinPosition(data, duplicate.id),
+        ),
         created: false,
       };
     }
@@ -124,7 +141,7 @@ export class EntryService {
     await this.registry.save(data);
 
     return {
-      entry: toClientEntry(entry, true),
+      entry: toClientEntry(entry, true, null),
       created: true,
     };
   }
@@ -159,7 +176,42 @@ export class EntryService {
       refreshed.entry,
       refreshed.available,
       refreshed.metadataStatus,
+      pinPosition(data, entry.id),
     );
+  }
+
+  async pinEntry(entryId: string): Promise<void> {
+    const data = await this.registry.load();
+    requireEntry(data, entryId);
+    if (!data.pinnedEntryIds.includes(entryId)) {
+      data.pinnedEntryIds.push(entryId);
+      await this.registry.save(data);
+    }
+  }
+
+  async unpinEntry(entryId: string): Promise<void> {
+    const data = await this.registry.load();
+    requireEntry(data, entryId);
+    const pinIndex = data.pinnedEntryIds.indexOf(entryId);
+    if (pinIndex !== -1) {
+      data.pinnedEntryIds.splice(pinIndex, 1);
+      await this.registry.save(data);
+    }
+  }
+
+  async reorderPinnedEntries(entryIds: string[]): Promise<void> {
+    const data = await this.registry.load();
+    if (
+      entryIds.length !== data.pinnedEntryIds.length ||
+      new Set(entryIds).size !== entryIds.length ||
+      entryIds.some((entryId) => !data.pinnedEntryIds.includes(entryId))
+    ) {
+      throw new InvalidPinOrderError();
+    }
+    if (!isDeepStrictEqual(entryIds, data.pinnedEntryIds)) {
+      data.pinnedEntryIds = [...entryIds];
+      await this.registry.save(data);
+    }
   }
 
   async removeEntry(entryId: string): Promise<void> {
@@ -172,6 +224,9 @@ export class EntryService {
     }
 
     data.entries.splice(entryIndex, 1);
+    data.pinnedEntryIds = data.pinnedEntryIds.filter(
+      (candidate) => candidate !== entryId,
+    );
     await this.registry.save(data);
     try {
       await this.registry.removeCachedIcon(entryId);
@@ -320,7 +375,24 @@ function findByLocation(
   return data.entries.find((entry) => locationKey(entry.location) === key);
 }
 
-function toClientEntry(entry: StoredEntry, available: boolean): ClientEntry {
+function requireEntry(data: RegistryData, entryId: string): StoredEntry {
+  const entry = data.entries.find((candidate) => candidate.id === entryId);
+  if (!entry) {
+    throw new EntryNotFoundError(entryId);
+  }
+  return entry;
+}
+
+function pinPosition(data: RegistryData, entryId: string): number | null {
+  const position = data.pinnedEntryIds.indexOf(entryId);
+  return position === -1 ? null : position;
+}
+
+function toClientEntry(
+  entry: StoredEntry,
+  available: boolean,
+  pinnedPosition: number | null,
+): ClientEntry {
   return {
     id: entry.id,
     name: entry.lastKnown.name,
@@ -328,6 +400,7 @@ function toClientEntry(entry: StoredEntry, available: boolean): ClientEntry {
     defaultAction: entry.lastKnown.defaultAction,
     available,
     hasCustomIcon: entry.lastKnown.hasCustomIcon,
+    pinnedPosition,
   };
 }
 
@@ -335,12 +408,13 @@ function toEntryDetails(
   entry: StoredEntry,
   available: boolean,
   metadataStatus: MetadataStatus,
+  pinnedPosition: number | null,
 ): EntryDetails {
   const tags = new Set(entry.lastKnown.tags);
   const tagIcon = TAG_ICON_PRIORITY.find((tag) => tags.has(tag));
 
   return {
-    ...toClientEntry(entry, available),
+    ...toClientEntry(entry, available, pinnedPosition),
     environment:
       entry.location.kind === "windows"
         ? { kind: "windows" }

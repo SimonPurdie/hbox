@@ -9,7 +9,16 @@
     <script type="module" src="/assets/app.js"></script>
   </head>
   <body>
-    <main id="desktop" class="desktop" aria-label="HBOX Entries" tabindex="-1"></main>
+    <main id="desktop" class="desktop" aria-label="HBOX Entries" tabindex="-1">
+      <section id="pinned-section" class="entry-section" aria-labelledby="pinned-heading" hidden>
+        <h2 id="pinned-heading" class="entry-section-title">Pinned</h2>
+        <div id="pinned-entries" class="entry-grid"></div>
+      </section>
+      <section id="all-section" class="entry-section" aria-labelledby="all-heading" hidden>
+        <h2 id="all-heading" class="entry-section-title">All</h2>
+        <div id="all-entries" class="entry-grid"></div>
+      </section>
+    </main>
 
     <div class="toolbar">
       <button id="add-entry" class="toolbar-icon add-entry" type="button" aria-label="Add Entry">
@@ -23,6 +32,7 @@
     <div id="context-menu" class="context-menu" role="menu" hidden>
       <button type="button" role="menuitem" data-action="folder">Open folder</button>
       <button type="button" role="menuitem" data-action="terminal">Open terminal</button>
+      <button id="pin-entry" class="pin-entry" type="button" role="menuitem">Pin to top</button>
       <button id="manage-entry" class="manage-entry" type="button" role="menuitem">Manage Entry</button>
     </div>
 

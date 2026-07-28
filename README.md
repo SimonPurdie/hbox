@@ -25,6 +25,10 @@ Right-click an Entry and select **Manage Entry** to view its location, metadata,
 and other diagnostics. **Remove Entry** unregisters it from HBOX without
 changing the folder or its `.hbox` contents.
 
+Use **Pin to top** in an Entry's context menu to add it to the ordered Pinned
+section. Pinned Entries remain in All and can be dragged within Pinned to
+change their order.
+
 Registered locations and last-known display metadata are stored in
 `%LOCALAPPDATA%\HBOX`. The registry is local to the machine.
 

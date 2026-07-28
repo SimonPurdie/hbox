@@ -14,6 +14,7 @@ import test from "node:test";
 import {
   EntryService,
   EntryUnavailableError,
+  InvalidPinOrderError,
 } from "../dist/server/entry-service.js";
 import { Registry } from "../dist/server/registry.js";
 
@@ -49,6 +50,7 @@ test("keeps a missing Entry visible from its last-known cache and rejects action
   assert.equal(registration?.created, true);
   assert.equal(registration?.entry.name, "Cached Project");
   assert.equal(registration?.entry.hasCustomIcon, true);
+  assert.equal(registration?.entry.pinnedPosition, null);
 
   const available = await service.listEntries();
   assert.equal(available.length, 1);
@@ -195,4 +197,73 @@ test("caches normalized icons and remembers invalid source signatures", async (t
     JSON.parse(await readFile(cacheRecordPath, "utf8")).status,
     "invalid",
   );
+});
+
+test("pins unavailable Entries, preserves pin order, and cleans removals", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-pins-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const projects = ["Alpha", "Bravo", "Charlie"].map((name) =>
+    path.join(root, name),
+  );
+  for (const project of projects) {
+    await mkdir(project);
+  }
+
+  let pickerIndex = 0;
+  const registry = new Registry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => projects[pickerIndex++] },
+    { launch: async () => {} },
+    () => {},
+  );
+  const registrations = [];
+  for (const project of projects) {
+    registrations.push(await service.registerFromPicker());
+  }
+  const [alpha, bravo, charlie] = registrations.map(
+    (registration) => registration.entry,
+  );
+
+  await service.pinEntry(bravo.id);
+  await service.pinEntry(alpha.id);
+  await rename(projects[2], `${projects[2]}-missing`);
+  await service.pinEntry(charlie.id);
+
+  let listed = await service.listEntries();
+  assert.deepEqual(
+    listed.map(({ name, available, pinnedPosition }) => ({
+      name,
+      available,
+      pinnedPosition,
+    })),
+    [
+      { name: "Alpha", available: true, pinnedPosition: 1 },
+      { name: "Bravo", available: true, pinnedPosition: 0 },
+      { name: "Charlie", available: false, pinnedPosition: 2 },
+    ],
+  );
+
+  await service.reorderPinnedEntries([charlie.id, bravo.id, alpha.id]);
+  await service.unpinEntry(bravo.id);
+  await service.pinEntry(bravo.id);
+  assert.deepEqual((await registry.load()).pinnedEntryIds, [
+    charlie.id,
+    alpha.id,
+    bravo.id,
+  ]);
+  await assert.rejects(
+    service.reorderPinnedEntries([charlie.id, alpha.id]),
+    InvalidPinOrderError,
+  );
+  await assert.rejects(
+    service.pinEntry("00000000-0000-4000-8000-000000000000"),
+    /Entry not found/,
+  );
+
+  await service.removeEntry(alpha.id);
+  assert.deepEqual((await registry.load()).pinnedEntryIds, [
+    charlie.id,
+    bravo.id,
+  ]);
 });

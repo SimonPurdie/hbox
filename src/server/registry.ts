@@ -45,7 +45,11 @@ export class Registry {
       raw = await readFile(this.registryPath, "utf8");
     } catch (error) {
       if (isMissingFileError(error)) {
-        return { version: REGISTRY_VERSION, entries: [] };
+        return {
+          version: REGISTRY_VERSION,
+          entries: [],
+          pinnedEntryIds: [],
+        };
       }
       throw error;
     }
@@ -60,13 +64,14 @@ export class Registry {
       );
     }
 
-    if (!isRegistryData(value)) {
+    const normalized = normalizeRegistryData(value);
+    if (!normalized) {
       throw new Error(
         `HBOX registry has an unsupported or invalid structure: ${this.registryPath}`,
       );
     }
 
-    return value;
+    return normalized;
   }
 
   async save(data: RegistryData): Promise<void> {
@@ -167,11 +172,33 @@ export function defaultDataDirectory(
   return path.join(localAppData, "HBOX");
 }
 
-function isRegistryData(value: unknown): value is RegistryData {
+function normalizeRegistryData(value: unknown): RegistryData | null {
   if (!isRecord(value) || value.version !== REGISTRY_VERSION) {
-    return false;
+    return null;
   }
-  return Array.isArray(value.entries) && value.entries.every(isStoredEntry);
+  if (
+    !Array.isArray(value.entries) ||
+    !value.entries.every(isStoredEntry) ||
+    (value.pinnedEntryIds !== undefined &&
+      (!Array.isArray(value.pinnedEntryIds) ||
+        !value.pinnedEntryIds.every((id) => typeof id === "string")))
+  ) {
+    return null;
+  }
+
+  const entries = value.entries as StoredEntry[];
+  const entryIds = new Set(entries.map((entry) => entry.id));
+  const pinnedEntryIds = [
+    ...new Set(
+      (value.pinnedEntryIds as string[] | undefined) ?? [],
+    ),
+  ].filter((id) => entryIds.has(id));
+
+  return {
+    version: REGISTRY_VERSION,
+    entries,
+    pinnedEntryIds,
+  };
 }
 
 function isStoredEntry(value: unknown): value is StoredEntry {
