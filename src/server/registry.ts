@@ -5,6 +5,7 @@ import {
   readFile,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import {
@@ -15,6 +16,17 @@ import {
   type RegistryData,
   type StoredEntry,
 } from "./types.js";
+
+export interface IconCacheRecord {
+  version: 1;
+  source: {
+    modifiedTimeMs: number;
+    size: number;
+  };
+  normalizerVersion: number;
+  color: string;
+  status: "valid" | "invalid";
+}
 
 export class Registry {
   readonly dataDirectory: string;
@@ -68,26 +80,78 @@ export class Registry {
     return path.join(this.iconDirectory, `${entryId}.svg`);
   }
 
-  async cacheIcon(entryId: string, icon: Buffer): Promise<void> {
+  iconCacheRecordPath(entryId: string): string {
+    return path.join(this.iconDirectory, `${entryId}.json`);
+  }
+
+  async readIconCacheRecord(entryId: string): Promise<IconCacheRecord | null> {
+    try {
+      const parsed: unknown = JSON.parse(
+        await readFile(this.iconCacheRecordPath(entryId), "utf8"),
+      );
+      return isIconCacheRecord(parsed) ? parsed : null;
+    } catch (error) {
+      if (
+        isMissingFileError(error) ||
+        error instanceof SyntaxError
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async hasCachedIcon(entryId: string): Promise<boolean> {
+    try {
+      return (await stat(this.iconPath(entryId))).isFile();
+    } catch (error) {
+      if (isMissingFileError(error)) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async cacheIcon(
+    entryId: string,
+    icon: Buffer,
+    record: IconCacheRecord,
+  ): Promise<void> {
     await mkdir(this.iconDirectory, { recursive: true });
     const destination = this.iconPath(entryId);
+    let iconChanged = true;
     try {
       const current = await readFile(destination);
       if (current.equals(icon)) {
-        return;
+        iconChanged = false;
       }
     } catch (error) {
       if (!isMissingFileError(error)) {
         throw error;
       }
     }
-    const temporaryPath = `${destination}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-    await writeFile(temporaryPath, icon);
-    await rename(temporaryPath, destination);
+    if (iconChanged) {
+      const temporaryPath = `${destination}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+      await writeFile(temporaryPath, icon);
+      await rename(temporaryPath, destination);
+    }
+    await writeJsonAtomically(this.iconCacheRecordPath(entryId), record);
+  }
+
+  async cacheInvalidIcon(
+    entryId: string,
+    record: IconCacheRecord,
+  ): Promise<void> {
+    await mkdir(this.iconDirectory, { recursive: true });
+    await rm(this.iconPath(entryId), { force: true });
+    await writeJsonAtomically(this.iconCacheRecordPath(entryId), record);
   }
 
   async removeCachedIcon(entryId: string): Promise<void> {
-    await rm(this.iconPath(entryId), { force: true });
+    await Promise.all([
+      rm(this.iconPath(entryId), { force: true }),
+      rm(this.iconCacheRecordPath(entryId), { force: true }),
+    ]);
   }
 }
 
@@ -167,4 +231,30 @@ function isMissingFileError(error: unknown): boolean {
     "code" in error &&
     (error as NodeJS.ErrnoException).code === "ENOENT"
   );
+}
+
+function isIconCacheRecord(value: unknown): value is IconCacheRecord {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    isRecord(value.source) &&
+    typeof value.source.modifiedTimeMs === "number" &&
+    Number.isFinite(value.source.modifiedTimeMs) &&
+    typeof value.source.size === "number" &&
+    Number.isSafeInteger(value.source.size) &&
+    value.source.size >= 0 &&
+    typeof value.normalizerVersion === "number" &&
+    Number.isSafeInteger(value.normalizerVersion) &&
+    typeof value.color === "string" &&
+    (value.status === "valid" || value.status === "invalid")
+  );
+}
+
+async function writeJsonAtomically(
+  destination: string,
+  value: unknown,
+): Promise<void> {
+  const temporaryPath = `${destination}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await rename(temporaryPath, destination);
 }

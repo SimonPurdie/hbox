@@ -32,7 +32,10 @@ test("keeps a missing Entry visible from its last-known cache and rejects action
       defaultAction: "folder",
     }),
   );
-  await writeFile(path.join(metadataDirectory, "icon.svg"), "<svg></svg>");
+  await writeFile(
+    path.join(metadataDirectory, "icon.svg"),
+    '<svg viewBox="0 0 24 24"><path fill="#123" d="M2 2h20v20H2z"/></svg>',
+  );
 
   const registry = new Registry(path.join(root, "app-data"));
   const launches = [];
@@ -75,10 +78,10 @@ test("keeps a missing Entry visible from its last-known cache and rejects action
     EntryUnavailableError,
   );
   assert.equal(launches.length, 0);
-  assert.equal(
-    (await service.readCachedIcon(missing[0].id)).toString(),
-    "<svg></svg>",
-  );
+  const cachedIcon = (await service.readCachedIcon(missing[0].id)).toString();
+  assert.match(cachedIcon, /width="24" height="24"/);
+  assert.match(cachedIcon, /fill="#cf8f00"/);
+  assert.doesNotMatch(cachedIcon, /#123/);
 
   await service.removeEntry(missing[0].id);
   assert.deepEqual(await service.listEntries(), []);
@@ -133,4 +136,63 @@ test("reports the canonical built-in icon source in details", async (t) => {
   const registration = await service.registerFromPicker();
   const details = await service.getEntryDetails(registration.entry.id);
   assert.deepEqual(details.iconSource, { kind: "tag", tag: "agent" });
+});
+
+test("caches normalized icons and remembers invalid source signatures", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-icon-cache-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  const metadataDirectory = path.join(project, ".hbox");
+  const iconPath = path.join(metadataDirectory, "icon.svg");
+  await mkdir(metadataDirectory, { recursive: true });
+  await writeFile(
+    path.join(metadataDirectory, "entry.json"),
+    JSON.stringify({ tags: ["tool"] }),
+  );
+  await writeFile(
+    iconPath,
+    '<svg viewBox="0 0 48 24"><path stroke="red" fill="none" d="M1 1h46"/></svg>',
+  );
+
+  const warnings = [];
+  const registry = new Registry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => project },
+    { launch: async () => {} },
+    (message) => warnings.push(message),
+  );
+
+  const registration = await service.registerFromPicker();
+  assert.equal(registration.entry.hasCustomIcon, true);
+  const entryId = registration.entry.id;
+  assert.match(
+    (await service.readCachedIcon(entryId)).toString(),
+    /viewBox="0 0 48 24".*stroke="#cf8f00"/,
+  );
+
+  const cacheRecordPath = registry.iconCacheRecordPath(entryId);
+  const firstRecordTime = (await stat(cacheRecordPath)).mtimeMs;
+  await service.listEntries();
+  assert.equal((await stat(cacheRecordPath)).mtimeMs, firstRecordTime);
+
+  await writeFile(
+    iconPath,
+    '<svg viewBox="0 0 24 24"><script>alert(1)</script></svg>',
+  );
+  const invalid = await service.listEntries();
+  assert.equal(invalid[0].hasCustomIcon, false);
+  assert.deepEqual(
+    (await service.getEntryDetails(entryId)).iconSource,
+    { kind: "tag", tag: "tool" },
+  );
+  await assert.rejects(service.readCachedIcon(entryId), /Entry not found/);
+  assert.equal(warnings.length, 1);
+
+  await service.listEntries();
+  assert.equal(warnings.length, 1);
+  assert.equal(
+    JSON.parse(await readFile(cacheRecordPath, "utf8")).status,
+    "invalid",
+  );
 });

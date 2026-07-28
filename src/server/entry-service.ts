@@ -11,6 +11,12 @@ import {
   parseSelectedPath,
 } from "./paths.js";
 import { Registry } from "./registry.js";
+import {
+  ENTRY_ICON_COLOR,
+  ICON_NORMALIZER_VERSION,
+  MAX_ICON_BYTES,
+  normalizeEntryIcon,
+} from "./svg-normalizer.js";
 import type { ActionLauncher } from "./launcher.js";
 import type { FolderPicker } from "./picker.js";
 import {
@@ -107,12 +113,12 @@ export class EntryService {
 
     const id = randomUUID();
     const metadata = await readEntryMetadata(location, this.warn);
-    await this.syncCachedIcon(id, metadata, false);
+    const hasCustomIcon = await this.syncCachedIcon(id, metadata);
 
     const entry: StoredEntry = {
       id,
       location,
-      lastKnown: metadata.presentation,
+      lastKnown: { ...metadata.presentation, hasCustomIcon },
     };
     data.entries.push(entry);
     await this.registry.save(data);
@@ -212,19 +218,19 @@ export class EntryService {
     }
 
     const metadata = await readEntryMetadata(entry.location, this.warn);
-    await this.syncCachedIcon(
+    const hasCustomIcon = await this.syncCachedIcon(
       entry.id,
       metadata,
-      entry.lastKnown.hasCustomIcon,
     );
+    const presentation = { ...metadata.presentation, hasCustomIcon };
 
     const changed = !isDeepStrictEqual(
-      metadata.presentation,
+      presentation,
       entry.lastKnown,
     );
     return {
       entry: changed
-        ? { ...entry, lastKnown: metadata.presentation }
+        ? { ...entry, lastKnown: presentation }
         : entry,
       available: true,
       changed,
@@ -235,13 +241,74 @@ export class EntryService {
   private async syncCachedIcon(
     entryId: string,
     metadata: MetadataResult,
-    previouslyHadIcon: boolean,
-  ): Promise<void> {
-    if (metadata.customIcon) {
-      await this.registry.cacheIcon(entryId, metadata.customIcon);
-    } else if (previouslyHadIcon) {
+  ): Promise<boolean> {
+    const source = metadata.customIconSource;
+    if (!source) {
       await this.registry.removeCachedIcon(entryId);
+      return false;
     }
+
+    const record = {
+      version: 1 as const,
+      source: {
+        modifiedTimeMs: source.modifiedTimeMs,
+        size: source.size,
+      },
+      normalizerVersion: ICON_NORMALIZER_VERSION,
+      color: ENTRY_ICON_COLOR,
+    };
+    const cached = await this.registry.readIconCacheRecord(entryId);
+    if (
+      cached &&
+      isDeepStrictEqual(cached.source, record.source) &&
+      cached.normalizerVersion === record.normalizerVersion &&
+      cached.color === record.color
+    ) {
+      if (cached.status === "invalid") {
+        return false;
+      }
+      if (await this.registry.hasCachedIcon(entryId)) {
+        return true;
+      }
+    }
+
+    if (source.size > MAX_ICON_BYTES) {
+      await this.registry.cacheInvalidIcon(entryId, {
+        ...record,
+        status: "invalid",
+      });
+      this.warn(
+        `Ignoring ${source.path}: SVG icons must be 256 KiB or smaller.`,
+      );
+      return false;
+    }
+
+    let sourceBytes: Buffer;
+    try {
+      sourceBytes = await readFile(source.path);
+    } catch (error) {
+      await this.registry.removeCachedIcon(entryId);
+      this.warn(`Could not read ${source.path}: ${errorMessage(error)}`);
+      return false;
+    }
+
+    let normalized: Buffer;
+    try {
+      normalized = normalizeEntryIcon(sourceBytes);
+    } catch (error) {
+      await this.registry.cacheInvalidIcon(entryId, {
+        ...record,
+        status: "invalid",
+      });
+      this.warn(`Ignoring ${source.path}: ${errorMessage(error)}`);
+      return false;
+    }
+
+    await this.registry.cacheIcon(entryId, normalized, {
+      ...record,
+      status: "valid",
+    });
+    return true;
   }
 }
 

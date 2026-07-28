@@ -8,12 +8,17 @@ import type {
   MetadataStatus,
 } from "./types.js";
 
-const MAX_ICON_BYTES = 256 * 1024;
 const runtimePath = process.platform === "win32" ? path.win32 : path;
+
+export interface CustomIconSource {
+  path: string;
+  modifiedTimeMs: number;
+  size: number;
+}
 
 export interface MetadataResult {
   presentation: EntryPresentation;
-  customIcon: Buffer | null;
+  customIconSource: CustomIconSource | null;
   metadataStatus: MetadataStatus;
 }
 
@@ -68,24 +73,23 @@ export async function readEntryMetadata(
   try {
     const iconInfo = await stat(iconPath);
     if (!iconInfo.isFile()) {
-      return { presentation, customIcon: null, metadataStatus };
-    }
-    if (iconInfo.size > MAX_ICON_BYTES) {
-      warn(`Ignoring ${iconPath}: SVG icons must be 256 KiB or smaller.`);
-      return { presentation, customIcon: null, metadataStatus };
+      return { presentation, customIconSource: null, metadataStatus };
     }
 
-    const customIcon = await readFile(iconPath);
     return {
-      presentation: { ...presentation, hasCustomIcon: true },
-      customIcon,
+      presentation,
+      customIconSource: {
+        path: iconPath,
+        modifiedTimeMs: iconInfo.mtimeMs,
+        size: iconInfo.size,
+      },
       metadataStatus,
     };
   } catch (error) {
     if (!isMissingFileError(error)) {
       warn(`Could not read ${iconPath}: ${errorMessage(error)}`);
     }
-    return { presentation, customIcon: null, metadataStatus };
+    return { presentation, customIconSource: null, metadataStatus };
   }
 }
 
