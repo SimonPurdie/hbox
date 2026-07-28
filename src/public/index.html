@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>HBOX</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/assets/app.js"></script>
+  </head>
+  <body>
+    <main id="desktop" class="desktop" aria-label="HBOX Entries"></main>
+
+    <div class="toolbar">
+      <button id="add-entry" class="toolbar-icon add-entry" type="button" aria-label="Add Entry">
+        <img src="/assets/icons/add.svg" alt="">
+      </button>
+      <span class="toolbar-icon config-icon" aria-hidden="true">
+        <img src="/assets/icons/config.svg" alt="">
+      </span>
+    </div>
+
+    <div id="context-menu" class="context-menu" role="menu" hidden>
+      <button type="button" role="menuitem" data-action="folder">Open folder</button>
+      <button type="button" role="menuitem" data-action="terminal">Open terminal</button>
+    </div>
+
+    <div id="search-shell" class="search-shell" hidden>
+      <img src="/assets/icons/search.svg" alt="">
+      <input id="search" type="text" aria-label="Search Entries" autocomplete="off" spellcheck="false">
+    </div>
+  </body>
+</html>
