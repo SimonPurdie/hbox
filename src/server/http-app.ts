@@ -17,6 +17,7 @@ import type { ActionName } from "./types.js";
 const ACTION_PATTERN =
   /^\/api\/entries\/([^/]+)\/actions\/(folder|terminal)$/;
 const ICON_PATTERN = /^\/api\/entries\/([^/]+)\/icon$/;
+const ENTRY_PATTERN = /^\/api\/entries\/([^/]+)$/;
 
 export function createHttpServer(
   service: EntryService,
@@ -43,12 +44,14 @@ export function createHttpServer(
         return;
       }
 
-      if (request.method === "POST") {
+      if (request.method === "POST" || request.method === "DELETE") {
         if (!hasAllowedOrigin(request)) {
           sendJson(response, 403, { error: "invalid_origin" });
           return;
         }
+      }
 
+      if (request.method === "POST") {
         if (url.pathname === "/api/restart") {
           if (!restart) {
             sendJson(response, 501, { error: "restart_unavailable" });
@@ -82,6 +85,16 @@ export function createHttpServer(
         }
       }
 
+      if (request.method === "DELETE") {
+        const entryMatch = ENTRY_PATTERN.exec(url.pathname);
+        if (entryMatch) {
+          const entryId = decodeURIComponent(entryMatch[1] ?? "");
+          await service.removeEntry(entryId);
+          response.writeHead(204).end();
+          return;
+        }
+      }
+
       if (request.method === "GET") {
         const iconMatch = ICON_PATTERN.exec(url.pathname);
         if (iconMatch) {
@@ -95,6 +108,13 @@ export function createHttpServer(
               "sandbox; default-src 'none'; style-src 'unsafe-inline'",
           });
           response.end(icon);
+          return;
+        }
+
+        const entryMatch = ENTRY_PATTERN.exec(url.pathname);
+        if (entryMatch) {
+          const entryId = decodeURIComponent(entryMatch[1] ?? "");
+          sendJson(response, 200, await service.getEntryDetails(entryId));
           return;
         }
 

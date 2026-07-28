@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   parseMetadata,
+  readEntryMetadata,
 } from "../dist/server/metadata.js";
 import {
   matchesEntry,
@@ -72,4 +76,33 @@ test("search matches case-insensitive name and tag substrings", () => {
   assert.equal(matchesEntry(entry, "web"), true);
   assert.equal(matchesEntry(entry, "script"), false);
   assert.equal(matchesEntry(entry, ""), true);
+});
+
+test("reports loaded, missing, and invalid metadata states", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-metadata-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const location = { kind: "windows", path: root };
+  const warnings = [];
+
+  assert.equal(
+    (await readEntryMetadata(location, (message) => warnings.push(message)))
+      .metadataStatus,
+    "not_found",
+  );
+
+  await mkdir(path.join(root, ".hbox"));
+  await writeFile(path.join(root, ".hbox", "entry.json"), "{");
+  assert.equal(
+    (await readEntryMetadata(location, (message) => warnings.push(message)))
+      .metadataStatus,
+    "invalid",
+  );
+
+  await writeFile(path.join(root, ".hbox", "entry.json"), '{"tags":["web"]}');
+  assert.equal(
+    (await readEntryMetadata(location, (message) => warnings.push(message)))
+      .metadataStatus,
+    "loaded",
+  );
+  assert.equal(warnings.length, 1);
 });

@@ -3,6 +3,8 @@ import {
   tagIconFor,
   type ActionName,
   type ClientEntry,
+  type EntryDetails,
+  type MetadataStatus,
   type TagIcon,
 } from "./model.js";
 
@@ -19,18 +21,59 @@ const desktop = requiredElement<HTMLElement>("desktop");
 const addButton = requiredElement<HTMLButtonElement>("add-entry");
 const configButton = requiredElement<HTMLButtonElement>("open-config");
 const contextMenu = requiredElement<HTMLElement>("context-menu");
+const manageEntryButton =
+  requiredElement<HTMLButtonElement>("manage-entry");
 const configMenu = requiredElement<HTMLElement>("config-menu");
 const restartButton =
   requiredElement<HTMLButtonElement>("restart-server");
 const searchShell = requiredElement<HTMLElement>("search-shell");
 const searchInput = requiredElement<HTMLInputElement>("search");
+const detailsDialog =
+  requiredElement<HTMLDialogElement>("entry-details-dialog");
+const detailsTitle = requiredElement<HTMLElement>("entry-details-title");
+const closeDetailsButton =
+  requiredElement<HTMLButtonElement>("close-entry-details");
+const removeEntryButton =
+  requiredElement<HTMLButtonElement>("remove-entry");
+const detailLocation = requiredElement<HTMLElement>("entry-detail-location");
+const detailEnvironment =
+  requiredElement<HTMLElement>("entry-detail-environment");
+const detailAvailability =
+  requiredElement<HTMLElement>("entry-detail-availability");
+const detailTags = requiredElement<HTMLElement>("entry-detail-tags");
+const detailDefault = requiredElement<HTMLElement>("entry-detail-default");
+const detailMetadata = requiredElement<HTMLElement>("entry-detail-metadata");
+const detailIcon = requiredElement<HTMLElement>("entry-detail-icon");
+const detailId = requiredElement<HTMLElement>("entry-detail-id");
 
 let entries: ClientEntry[] = [];
 let contextEntry: ClientEntry | null = null;
+let managedEntry: EntryDetails | null = null;
+let detailsOrigin: HTMLElement | null = null;
 
 addButton.addEventListener("click", () => void addEntry());
 configButton.addEventListener("click", toggleConfigMenu);
 restartButton.addEventListener("click", () => void restartServer());
+manageEntryButton.addEventListener("click", () => {
+  if (contextEntry) {
+    void openEntryDetails(contextEntry);
+  }
+});
+closeDetailsButton.addEventListener("click", () => detailsDialog.close());
+removeEntryButton.addEventListener("click", () => void removeManagedEntry());
+detailsDialog.addEventListener("click", (event) => {
+  if (event.target === detailsDialog) {
+    detailsDialog.close();
+  }
+});
+detailsDialog.addEventListener("close", () => {
+  managedEntry = null;
+  removeEntryButton.disabled = false;
+  if (detailsOrigin?.isConnected) {
+    detailsOrigin.focus();
+  }
+  detailsOrigin = null;
+});
 searchInput.addEventListener("input", () => {
   if (!searchInput.value) {
     hideSearch();
@@ -65,6 +108,9 @@ document.addEventListener("pointerdown", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    if (detailsDialog.open) {
+      return;
+    }
     if (!contextMenu.hidden) {
       closeContextMenu();
       return;
@@ -135,6 +181,112 @@ async function addEntry(): Promise<void> {
     console.error(error);
   } finally {
     addButton.disabled = false;
+  }
+}
+
+async function openEntryDetails(entry: ClientEntry): Promise<void> {
+  detailsOrigin = desktop.querySelector<HTMLElement>(
+    `[data-entry-id="${CSS.escape(entry.id)}"]`,
+  );
+  closeContextMenu();
+
+  try {
+    const response = await fetch(
+      `/api/entries/${encodeURIComponent(entry.id)}`,
+    );
+    if (!response.ok) {
+      throw new Error(`Entry details failed with status ${response.status}.`);
+    }
+    managedEntry = (await response.json()) as EntryDetails;
+    populateEntryDetails(managedEntry);
+    detailsDialog.showModal();
+    closeDetailsButton.focus();
+  } catch (error) {
+    detailsOrigin = null;
+    console.error(error);
+  }
+}
+
+function populateEntryDetails(entry: EntryDetails): void {
+  detailsTitle.textContent = entry.name;
+  detailLocation.textContent = entry.location;
+  detailEnvironment.textContent =
+    entry.environment.kind === "windows"
+      ? "Windows"
+      : `WSL · ${entry.environment.distribution}`;
+  detailAvailability.textContent = entry.available
+    ? "Available"
+    : "Unavailable";
+  detailDefault.textContent =
+    entry.defaultAction === "folder"
+      ? "Open folder"
+      : entry.defaultAction === "terminal"
+        ? "Open terminal"
+        : "None";
+  detailMetadata.textContent = metadataStatusLabel(entry.metadataStatus);
+  detailIcon.textContent =
+    entry.iconSource.kind === "custom"
+      ? "Custom .hbox/icon.svg"
+      : entry.iconSource.kind === "tag"
+        ? `Built-in tag · ${entry.iconSource.tag}`
+        : "None";
+  detailId.textContent = entry.id;
+
+  if (entry.tags.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "detail-empty";
+    empty.textContent = "None";
+    detailTags.replaceChildren(empty);
+  } else {
+    detailTags.replaceChildren(
+      ...entry.tags.map((tag) => {
+        const pill = document.createElement("span");
+        pill.className = "detail-tag";
+        pill.textContent = tag;
+        return pill;
+      }),
+    );
+  }
+}
+
+async function removeManagedEntry(): Promise<void> {
+  if (!managedEntry) {
+    return;
+  }
+
+  const entryId = managedEntry.id;
+  removeEntryButton.disabled = true;
+  try {
+    const response = await fetch(
+      `/api/entries/${encodeURIComponent(entryId)}`,
+      { method: "DELETE" },
+    );
+    if (!response.ok) {
+      throw new Error(`Entry removal failed with status ${response.status}.`);
+    }
+
+    entries = entries.filter((entry) => entry.id !== entryId);
+    detailsDialog.close();
+    renderEntries();
+    desktop.focus();
+  } catch (error) {
+    console.error(error);
+    removeEntryButton.disabled = false;
+  }
+}
+
+function metadataStatusLabel(status: MetadataStatus): string {
+  switch (status) {
+    case "loaded":
+      return "Loaded";
+    case "not_found":
+      return "Not found";
+    case "invalid":
+      return "Invalid";
+    case "unreadable":
+      return "Unreadable";
+    case "folder_unavailable":
+      return "Folder unavailable";
   }
 }
 

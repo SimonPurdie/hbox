@@ -9,6 +9,12 @@ export const TAG_ICON_PRIORITY = [
 
 export type TagIcon = (typeof TAG_ICON_PRIORITY)[number];
 export type ActionName = "folder" | "terminal";
+export type MetadataStatus =
+  | "loaded"
+  | "not_found"
+  | "invalid"
+  | "unreadable"
+  | "folder_unavailable";
 
 export interface ClientEntry {
   id: string;
@@ -17,6 +23,20 @@ export interface ClientEntry {
   defaultAction: ActionName | null;
   available: boolean;
   hasCustomIcon: boolean;
+}
+
+export type IconSource =
+  | { kind: "custom" }
+  | { kind: "tag"; tag: TagIcon }
+  | { kind: "none" };
+
+export interface EntryDetails extends ClientEntry {
+  environment:
+    | { kind: "windows" }
+    | { kind: "wsl"; distribution: string };
+  location: string;
+  metadataStatus: MetadataStatus;
+  iconSource: IconSource;
 }
 
 export function tagIconFor(entry: ClientEntry): TagIcon | null {

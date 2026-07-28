@@ -110,3 +110,53 @@ test("protects and schedules the restart endpoint", async (t) => {
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(restartCount, 1);
 });
+
+test("serves Entry details and protects removal by origin", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+
+  const removed = [];
+  const details = {
+    id: "abc",
+    name: "Example",
+    tags: ["tool"],
+    defaultAction: null,
+    available: false,
+    hasCustomIcon: false,
+    environment: { kind: "wsl", distribution: "Ubuntu" },
+    location: "/home/simon/example",
+    metadataStatus: "folder_unavailable",
+    iconSource: { kind: "tag", tag: "tool" },
+  };
+  const service = {
+    listEntries: async () => [],
+    registerFromPicker: async () => null,
+    performAction: async () => {},
+    getEntryDetails: async () => details,
+    removeEntry: async (id) => removed.push(id),
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const server = createHttpServer(service, staticDirectory, () => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const detailResponse = await fetch(`${baseUrl}/api/entries/abc`);
+  assert.equal(detailResponse.status, 200);
+  assert.deepEqual(await detailResponse.json(), details);
+
+  const blocked = await fetch(`${baseUrl}/api/entries/abc`, {
+    method: "DELETE",
+  });
+  assert.equal(blocked.status, 403);
+
+  const removedResponse = await fetch(`${baseUrl}/api/entries/abc`, {
+    method: "DELETE",
+    headers: { Origin: baseUrl },
+  });
+  assert.equal(removedResponse.status, 204);
+  assert.deepEqual(removed, ["abc"]);
+});

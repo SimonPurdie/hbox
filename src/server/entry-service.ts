@@ -16,9 +16,12 @@ import type { FolderPicker } from "./picker.js";
 import {
   type ActionName,
   type ClientEntry,
+  type EntryDetails,
   type EntryLocation,
+  type MetadataStatus,
   type RegistryData,
   type StoredEntry,
+  TAG_ICON_PRIORITY,
 } from "./types.js";
 
 export class EntryNotFoundError extends Error {
@@ -133,6 +136,46 @@ export class EntryService {
     await this.launcher.launch(action, entry.location);
   }
 
+  async getEntryDetails(entryId: string): Promise<EntryDetails> {
+    const data = await this.registry.load();
+    const entry = data.entries.find((candidate) => candidate.id === entryId);
+    if (!entry) {
+      throw new EntryNotFoundError(entryId);
+    }
+
+    const refreshed = await this.refreshEntry(entry);
+    if (refreshed.changed) {
+      entry.lastKnown = refreshed.entry.lastKnown;
+      await this.registry.save(data);
+    }
+
+    return toEntryDetails(
+      refreshed.entry,
+      refreshed.available,
+      refreshed.metadataStatus,
+    );
+  }
+
+  async removeEntry(entryId: string): Promise<void> {
+    const data = await this.registry.load();
+    const entryIndex = data.entries.findIndex(
+      (candidate) => candidate.id === entryId,
+    );
+    if (entryIndex === -1) {
+      throw new EntryNotFoundError(entryId);
+    }
+
+    data.entries.splice(entryIndex, 1);
+    await this.registry.save(data);
+    try {
+      await this.registry.removeCachedIcon(entryId);
+    } catch (error) {
+      this.warn(
+        `Entry ${entryId} was removed, but its cached icon could not be removed: ${errorMessage(error)}`,
+      );
+    }
+  }
+
   async readCachedIcon(entryId: string): Promise<Buffer> {
     const data = await this.registry.load();
     const entry = data.entries.find((candidate) => candidate.id === entryId);
@@ -152,10 +195,20 @@ export class EntryService {
 
   private async refreshEntry(
     entry: StoredEntry,
-  ): Promise<{ entry: StoredEntry; available: boolean; changed: boolean }> {
+  ): Promise<{
+    entry: StoredEntry;
+    available: boolean;
+    changed: boolean;
+    metadataStatus: MetadataStatus;
+  }> {
     const available = await isFolderAvailable(entry.location);
     if (!available) {
-      return { entry, available: false, changed: false };
+      return {
+        entry,
+        available: false,
+        changed: false,
+        metadataStatus: "folder_unavailable",
+      };
     }
 
     const metadata = await readEntryMetadata(entry.location, this.warn);
@@ -175,6 +228,7 @@ export class EntryService {
         : entry,
       available: true,
       changed,
+      metadataStatus: metadata.metadataStatus,
     };
   }
 
@@ -208,4 +262,35 @@ function toClientEntry(entry: StoredEntry, available: boolean): ClientEntry {
     available,
     hasCustomIcon: entry.lastKnown.hasCustomIcon,
   };
+}
+
+function toEntryDetails(
+  entry: StoredEntry,
+  available: boolean,
+  metadataStatus: MetadataStatus,
+): EntryDetails {
+  const tags = new Set(entry.lastKnown.tags);
+  const tagIcon = TAG_ICON_PRIORITY.find((tag) => tags.has(tag));
+
+  return {
+    ...toClientEntry(entry, available),
+    environment:
+      entry.location.kind === "windows"
+        ? { kind: "windows" }
+        : {
+            kind: "wsl",
+            distribution: entry.location.distribution,
+          },
+    location: entry.location.path,
+    metadataStatus,
+    iconSource: entry.lastKnown.hasCustomIcon
+      ? { kind: "custom" }
+      : tagIcon
+        ? { kind: "tag", tag: tagIcon }
+        : { kind: "none" },
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

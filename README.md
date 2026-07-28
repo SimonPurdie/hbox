@@ -21,6 +21,10 @@ starting the server.
 The Config menu can restart the running server without access to its original
 terminal.
 
+Right-click an Entry and select **Manage Entry** to view its location, metadata,
+and other diagnostics. **Remove Entry** unregisters it from HBOX without
+changing the folder or its `.hbox` contents.
+
 Registered locations and last-known display metadata are stored in
 `%LOCALAPPDATA%\HBOX`. The registry is local to the machine.
 

@@ -5,6 +5,7 @@ import type {
   ActionName,
   EntryLocation,
   EntryPresentation,
+  MetadataStatus,
 } from "./types.js";
 
 const MAX_ICON_BYTES = 256 * 1024;
@@ -13,6 +14,7 @@ const runtimePath = process.platform === "win32" ? path.win32 : path;
 export interface MetadataResult {
   presentation: EntryPresentation;
   customIcon: Buffer | null;
+  metadataStatus: MetadataStatus;
 }
 
 export async function isFolderAvailable(
@@ -40,15 +42,25 @@ export async function readEntryMetadata(
   };
 
   let presentation = fallback;
+  let metadataStatus: MetadataStatus = "not_found";
   try {
     const raw = await readFile(metadataPath, "utf8");
     try {
-      presentation = parseMetadataValue(JSON.parse(raw), fallback);
+      const parsed: unknown = JSON.parse(raw);
+      if (isRecord(parsed)) {
+        presentation = parseMetadataValue(parsed, fallback);
+        metadataStatus = "loaded";
+      } else {
+        metadataStatus = "invalid";
+        warn(`Could not parse ${metadataPath}: expected a JSON object.`);
+      }
     } catch {
+      metadataStatus = "invalid";
       warn(`Could not parse ${metadataPath}: invalid JSON.`);
     }
   } catch (error) {
     if (!isMissingFileError(error)) {
+      metadataStatus = "unreadable";
       warn(`Could not read ${metadataPath}: ${errorMessage(error)}`);
     }
   }
@@ -56,23 +68,24 @@ export async function readEntryMetadata(
   try {
     const iconInfo = await stat(iconPath);
     if (!iconInfo.isFile()) {
-      return { presentation, customIcon: null };
+      return { presentation, customIcon: null, metadataStatus };
     }
     if (iconInfo.size > MAX_ICON_BYTES) {
       warn(`Ignoring ${iconPath}: SVG icons must be 256 KiB or smaller.`);
-      return { presentation, customIcon: null };
+      return { presentation, customIcon: null, metadataStatus };
     }
 
     const customIcon = await readFile(iconPath);
     return {
       presentation: { ...presentation, hasCustomIcon: true },
       customIcon,
+      metadataStatus,
     };
   } catch (error) {
     if (!isMissingFileError(error)) {
       warn(`Could not read ${iconPath}: ${errorMessage(error)}`);
     }
-    return { presentation, customIcon: null };
+    return { presentation, customIcon: null, metadataStatus };
   }
 }
 
