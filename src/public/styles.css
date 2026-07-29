@@ -646,13 +646,13 @@ body.sessions-open .search-shell {
   white-space: nowrap;
 }
 
-.session-name {
+.session-entry {
   font-size: 13px;
   font-weight: 650;
   line-height: 18px;
 }
 
-.session-entry,
+.session-name,
 .session-message,
 .session-age {
   color: color-mix(in srgb, var(--interface-foreground) 58%, transparent);

@@ -787,7 +787,7 @@ function createSessionElement(session: ClientSession): HTMLElement {
   const entry = document.createElement("div");
   entry.className = "session-entry";
   entry.textContent = session.entryName;
-  identity.append(name, entry);
+  identity.append(entry, name);
 
   const state = document.createElement("div");
   state.className = "session-state";
