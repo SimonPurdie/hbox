@@ -1,4 +1,5 @@
 import {
+  interfaceThemeFor,
   mergeVisiblePinOrder,
   matchesEntry,
   tagIconFor,
@@ -42,6 +43,8 @@ const manageEntryButton =
 const configMenu = requiredElement<HTMLElement>("config-menu");
 const restartButton =
   requiredElement<HTMLButtonElement>("restart-server");
+const interfaceColorInput =
+  requiredElement<HTMLInputElement>("interface-color");
 const searchShell = requiredElement<HTMLElement>("search-shell");
 const searchInput = requiredElement<HTMLInputElement>("search");
 const detailsDialog =
@@ -80,6 +83,12 @@ closeSessionsButton.addEventListener("click", () => {
 });
 configButton.addEventListener("click", toggleConfigMenu);
 restartButton.addEventListener("click", () => void restartServer());
+interfaceColorInput.addEventListener("input", () => {
+  applyInterfaceColor(interfaceColorInput.value);
+});
+interfaceColorInput.addEventListener("change", () => {
+  void saveInterfaceColor(interfaceColorInput.value);
+});
 pinEntryButton.addEventListener("click", () => {
   const entry = contextEntry;
   if (!entry) {
@@ -241,7 +250,54 @@ window.addEventListener("resize", () => {
 });
 void loadEntries();
 void loadSessions();
+void loadPreferences();
 window.setInterval(() => void loadSessions(), 2_000);
+
+async function loadPreferences(): Promise<void> {
+  try {
+    const response = await fetch("/api/preferences", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(
+        `Preference request failed with status ${response.status}.`,
+      );
+    }
+    const preferences = (await response.json()) as {
+      interfaceColor: string;
+    };
+    interfaceColorInput.value = preferences.interfaceColor;
+    applyInterfaceColor(preferences.interfaceColor);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+async function saveInterfaceColor(color: string): Promise<void> {
+  try {
+    const response = await fetch("/api/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interfaceColor: color }),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Preference update failed with status ${response.status}.`,
+      );
+    }
+  } catch (error) {
+    console.error(error);
+    await loadPreferences();
+  }
+}
+
+function applyInterfaceColor(color: string): void {
+  const theme = interfaceThemeFor(color);
+  const root = document.documentElement.style;
+  root.setProperty("--interface-color", color);
+  root.setProperty("--interface-foreground", theme.foreground);
+  root.setProperty("--interface-icon-filter", theme.iconFilter);
+  root.setProperty("--interface-shadow-color", theme.shadowColor);
+  root.setProperty("color-scheme", theme.colorScheme);
+}
 
 async function loadEntries(): Promise<void> {
   try {

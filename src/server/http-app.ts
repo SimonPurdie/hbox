@@ -15,6 +15,10 @@ import {
 } from "./entry-service.js";
 import { PickerBusyError } from "./picker.js";
 import {
+  InvalidPreferencesError,
+  type PreferencesStore,
+} from "./preferences.js";
+import {
   SessionActionUnavailableError,
   SessionConflictError,
   type SessionManager,
@@ -39,6 +43,7 @@ export function createHttpServer(
   restart?: () => void,
   instanceId: string = `${process.pid}`,
   sessions?: SessionManager,
+  preferences?: PreferencesStore,
 ): Server {
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -70,6 +75,15 @@ export function createHttpServer(
           200,
           sessions ? await sessions.listSessions() : [],
         );
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/preferences") {
+        if (!preferences) {
+          sendJson(response, 501, { error: "preferences_unavailable" });
+          return;
+        }
+        sendJson(response, 200, await preferences.load());
         return;
       }
 
@@ -160,6 +174,19 @@ export function createHttpServer(
         return;
       }
 
+      if (request.method === "PUT" && url.pathname === "/api/preferences") {
+        if (!preferences) {
+          sendJson(response, 501, { error: "preferences_unavailable" });
+          return;
+        }
+        sendJson(
+          response,
+          200,
+          await preferences.save(await readPreferences(request)),
+        );
+        return;
+      }
+
       if (request.method === "DELETE") {
         const sessionMatch = SESSION_PATTERN.exec(url.pathname);
         if (sessionMatch && sessions) {
@@ -247,10 +274,17 @@ export function createHttpServer(
         return;
       }
       if (
-        caught instanceof InvalidRequestError ||
-        caught instanceof InvalidPinOrderError
+        caught instanceof InvalidRequestError
       ) {
         sendJson(response, 400, { error: "invalid_pin_order" });
+        return;
+      }
+      if (caught instanceof InvalidPinOrderError) {
+        sendJson(response, 400, { error: "invalid_pin_order" });
+        return;
+      }
+      if (caught instanceof InvalidPreferencesError) {
+        sendJson(response, 400, { error: "invalid_preferences" });
         return;
       }
 
@@ -263,6 +297,20 @@ export function createHttpServer(
 async function readPinOrder(
   request: IncomingMessage,
 ): Promise<string[]> {
+  const value = await readJsonBody(request);
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("entryIds" in value) ||
+    !Array.isArray(value.entryIds) ||
+    !value.entryIds.every((entryId) => typeof entryId === "string")
+  ) {
+    throw new InvalidRequestError("Pinned Entry IDs are invalid.");
+  }
+  return value.entryIds;
+}
+
+async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
   for await (const chunk of request) {
@@ -274,22 +322,24 @@ async function readPinOrder(
     chunks.push(buffer);
   }
 
-  let value: unknown;
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
     throw new InvalidRequestError("Request body is not valid JSON.");
   }
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    !("entryIds" in value) ||
-    !Array.isArray(value.entryIds) ||
-    !value.entryIds.every((entryId) => typeof entryId === "string")
-  ) {
-    throw new InvalidRequestError("Pinned Entry IDs are invalid.");
+}
+
+async function readPreferences(
+  request: IncomingMessage,
+): Promise<unknown> {
+  try {
+    return await readJsonBody(request);
+  } catch (error) {
+    if (error instanceof InvalidRequestError) {
+      throw new InvalidPreferencesError(error.message);
+    }
+    throw error;
   }
-  return value.entryIds;
 }
 
 function hasAllowedOrigin(request: IncomingMessage): boolean {

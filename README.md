@@ -19,7 +19,8 @@ the browser automatically. `npm start` performs a fresh production build before
 starting the server.
 
 The Config menu can rebuild and restart the running server without access to
-its original terminal. Running project Sessions persist through this restart.
+its original terminal. It also stores the selected interface colour in the
+local HBOX data folder. Running project Sessions persist through a restart.
 
 Right-click an Entry and select **Manage Entry** to view its location, metadata,
 and other diagnostics. **Remove Entry** unregisters it from HBOX without

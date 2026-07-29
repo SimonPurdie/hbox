@@ -5,6 +5,7 @@ import { EntryService } from "./entry-service.js";
 import { createHttpServer } from "./http-app.js";
 import { WindowsActionLauncher } from "./launcher.js";
 import { PowerShellFolderPicker } from "./picker.js";
+import { PreferencesStore } from "./preferences.js";
 import { defaultDataDirectory, Registry } from "./registry.js";
 import { rebuildAndReplaceCurrentProcess } from "./restart.js";
 import { SessionManager } from "./session-manager.js";
@@ -22,6 +23,7 @@ const staticDirectory = path.resolve(
 try {
   const dataDirectory = defaultDataDirectory();
   const registry = new Registry(dataDirectory);
+  const preferences = new PreferencesStore(dataDirectory);
   const launcher = new WindowsActionLauncher();
   const sessions = new SessionManager(
     new SessionStore(dataDirectory),
@@ -64,6 +66,7 @@ try {
     },
     INSTANCE_ID,
     sessions,
+    preferences,
   );
   server.listen(PORT, HOST, () => {
     console.log(`HBOX is ready at http://${HOST}:${PORT}`);

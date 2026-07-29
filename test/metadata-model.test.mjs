@@ -8,6 +8,7 @@ import {
   readEntryMetadata,
 } from "../dist/server/metadata.js";
 import {
+  interfaceThemeFor,
   mergeVisiblePinOrder,
   matchesEntry,
   tagIconFor,
@@ -137,6 +138,22 @@ test("merges filtered pin reordering without moving hidden pins", () => {
     () => mergeVisiblePinOrder(["a", "b"], ["a", "missing"]),
     /does not match/,
   );
+});
+
+test("interface theme selects the higher-contrast foreground", () => {
+  assert.deepEqual(interfaceThemeFor("#193b56"), {
+    foreground: "#ffffff",
+    iconFilter: "none",
+    shadowColor: "rgb(7 20 32 / 65%)",
+    colorScheme: "dark",
+  });
+  assert.deepEqual(interfaceThemeFor("#f0dca0"), {
+    foreground: "#17202b",
+    iconFilter: "invert(1)",
+    shadowColor: "rgb(255 255 255 / 60%)",
+    colorScheme: "light",
+  });
+  assert.throws(() => interfaceThemeFor("navy"), /invalid/);
 });
 
 test("reports loaded, missing, and invalid metadata states", async (t) => {

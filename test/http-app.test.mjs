@@ -8,6 +8,7 @@ import {
   InvalidPinOrderError,
 } from "../dist/server/entry-service.js";
 import { createHttpServer } from "../dist/server/http-app.js";
+import { PreferencesStore } from "../dist/server/preferences.js";
 
 test("serves Entries and protects mutation endpoints by origin", async (t) => {
   const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
@@ -349,4 +350,77 @@ test("serves and controls Sessions through protected endpoints", async (t) => {
     { action: "recheck", id: "session-a" },
     { action: "forget", id: "session-a" },
   ]);
+});
+
+test("serves and updates persisted preferences", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  const dataDirectory = await mkdtemp(
+    path.join(os.tmpdir(), "hbox-preferences-"),
+  );
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+  t.after(() => rm(dataDirectory, { recursive: true, force: true }));
+
+  const service = {
+    listEntries: async () => [],
+    registerFromPicker: async () => null,
+    performAction: async () => {},
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const preferences = new PreferencesStore(dataDirectory);
+  const server = createHttpServer(
+    service,
+    staticDirectory,
+    () => {},
+    undefined,
+    "test-instance",
+    undefined,
+    preferences,
+  );
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  assert.deepEqual(
+    await fetch(`${baseUrl}/api/preferences`).then((response) =>
+      response.json(),
+    ),
+    { interfaceColor: "#193b56" },
+  );
+
+  assert.equal(
+    (
+      await fetch(`${baseUrl}/api/preferences`, {
+        method: "PUT",
+        body: JSON.stringify({ interfaceColor: "#abcdef" }),
+      })
+    ).status,
+    403,
+  );
+
+  const headers = {
+    Origin: baseUrl,
+    "Content-Type": "application/json",
+  };
+  const updated = await fetch(`${baseUrl}/api/preferences`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ interfaceColor: "#ABCDEF" }),
+  });
+  assert.equal(updated.status, 200);
+  assert.deepEqual(await updated.json(), { interfaceColor: "#abcdef" });
+  assert.deepEqual(await preferences.load(), {
+    interfaceColor: "#abcdef",
+  });
+
+  const invalid = await fetch(`${baseUrl}/api/preferences`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ interfaceColor: "blue" }),
+  });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(await invalid.json(), {
+    error: "invalid_preferences",
+  });
 });
