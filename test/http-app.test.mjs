@@ -49,6 +49,95 @@ test("serves Entries and protects mutation endpoints by origin", async (t) => {
   assert.deepEqual(calls, [{ id: "abc", action: "folder" }]);
 });
 
+test("inspects and registers explicit Entry paths through protected endpoints", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+
+  const calls = [];
+  const inspection = {
+    valid: true,
+    location: { kind: "windows", path: "C:\\Project" },
+    metadataStatus: "loaded",
+    effective: {
+      name: "Project",
+      tags: ["script"],
+      defaultAction: null,
+      actions: [],
+      sessions: [],
+    },
+    icon: { status: "absent" },
+    issues: [],
+  };
+  const entry = { id: "entry-a", name: "Project" };
+  const service = {
+    listEntries: async () => [],
+    registerFromPicker: async () => null,
+    inspectLocation: async (selectedPath) => {
+      calls.push({ operation: "inspect", selectedPath });
+      return inspection;
+    },
+    registerLocation: async (selectedPath) => {
+      calls.push({ operation: "register", selectedPath });
+      return { created: true, entry };
+    },
+    performAction: async () => {},
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const server = createHttpServer(service, staticDirectory, () => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const body = JSON.stringify({ path: "C:\\Project" });
+
+  assert.equal(
+    (
+      await fetch(`${baseUrl}/api/entries/inspect`, {
+        method: "POST",
+        body,
+      })
+    ).status,
+    403,
+  );
+
+  const headers = {
+    Origin: baseUrl,
+    "Content-Type": "application/json",
+  };
+  const inspected = await fetch(`${baseUrl}/api/entries/inspect`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  assert.equal(inspected.status, 200);
+  assert.deepEqual(await inspected.json(), inspection);
+
+  const registered = await fetch(`${baseUrl}/api/entries/register`, {
+    method: "POST",
+    headers,
+    body,
+  });
+  assert.equal(registered.status, 201);
+  assert.deepEqual(await registered.json(), entry);
+  assert.deepEqual(calls, [
+    { operation: "inspect", selectedPath: "C:\\Project" },
+    { operation: "register", selectedPath: "C:\\Project" },
+  ]);
+
+  assert.equal(
+    (
+      await fetch(`${baseUrl}/api/entries/register`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ location: "C:\\Project" }),
+      })
+    ).status,
+    400,
+  );
+});
+
 test("maps unavailable action attempts to a stable conflict response", async (t) => {
   const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
   t.after(() => rm(staticDirectory, { recursive: true, force: true }));

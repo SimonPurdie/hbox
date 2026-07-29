@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
+import { inspectIntegration } from "./integration-inspector.js";
 import {
   isFolderAvailable,
   readEntryMetadata,
@@ -26,6 +27,7 @@ import {
   type ClientEntry,
   type EntryDetails,
   type EntryLocation,
+  type IntegrationInspection,
   type MetadataStatus,
   type RegistryData,
   type StoredEntry,
@@ -41,6 +43,14 @@ export class EntryNotFoundError extends Error {
 export class EntryUnavailableError extends Error {
   constructor(entryId: string) {
     super(`Entry is unavailable: ${entryId}`);
+  }
+}
+
+export class InvalidEntryPathError extends Error {}
+
+export class SelectedFolderUnavailableError extends Error {
+  constructor() {
+    super("The selected folder is not available.");
   }
 }
 
@@ -113,8 +123,15 @@ export class EntryService {
     if (selectedPath === null) {
       return null;
     }
+    return await this.registerLocation(selectedPath);
+  }
 
-    const location = parseSelectedPath(selectedPath);
+  async inspectLocation(selectedPath: string): Promise<IntegrationInspection> {
+    return await inspectIntegration(parseEntryLocation(selectedPath));
+  }
+
+  async registerLocation(selectedPath: string): Promise<RegistrationResult> {
+    const location = parseEntryLocation(selectedPath);
     const data = await this.registry.load();
     const duplicate = findByLocation(data, location);
     if (duplicate) {
@@ -134,7 +151,7 @@ export class EntryService {
     }
 
     if (!(await isFolderAvailable(location))) {
-      throw new Error("The selected folder is no longer available.");
+      throw new SelectedFolderUnavailableError();
     }
 
     const id = randomUUID();
@@ -390,6 +407,14 @@ export class EntryService {
       status: "valid",
     });
     return true;
+  }
+}
+
+function parseEntryLocation(selectedPath: string): EntryLocation {
+  try {
+    return parseSelectedPath(selectedPath);
+  } catch (error) {
+    throw new InvalidEntryPathError(errorMessage(error));
   }
 }
 

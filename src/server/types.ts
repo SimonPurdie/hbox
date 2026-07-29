@@ -98,6 +98,24 @@ export interface EntryDetails extends ClientEntry {
   iconSource: IconSource;
 }
 
+export interface IntegrationInspection {
+  valid: boolean;
+  location: EntryLocation;
+  metadataStatus: MetadataStatus;
+  effective: {
+    name: string;
+    tags: string[];
+    defaultAction: ActionName | null;
+    actions: StartSessionActionDefinition[];
+    sessions: ProcessSessionDefinition[];
+  };
+  icon:
+    | { status: "absent" }
+    | { status: "valid"; normalizedBytes: number }
+    | { status: "invalid"; message: string };
+  issues: string[];
+}
+
 export type SessionStatus =
   | "starting"
   | "running"

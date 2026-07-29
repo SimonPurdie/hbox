@@ -14,7 +14,9 @@ import test from "node:test";
 import {
   EntryService,
   EntryUnavailableError,
+  InvalidEntryPathError,
   InvalidPinOrderError,
+  SelectedFolderUnavailableError,
 } from "../dist/server/entry-service.js";
 import { Registry } from "../dist/server/registry.js";
 
@@ -116,6 +118,40 @@ test("returns the existing Entry when the picker selects a duplicate", async (t)
   assert.equal(second?.created, false);
   assert.equal(first?.entry.id, second?.entry.id);
   assert.equal((await service.listEntries()).length, 1);
+});
+
+test("inspects and registers an explicit project path", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-explicit-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  await mkdir(path.join(project, ".hbox"), { recursive: true });
+  await writeFile(
+    path.join(project, ".hbox", "entry.json"),
+    '{"name":"Explicit Project","tags":["script"]}',
+  );
+
+  const service = new EntryService(
+    new Registry(path.join(root, "app-data")),
+    { pick: async () => null },
+    { launch: async () => {} },
+    () => {},
+  );
+  assert.equal((await service.inspectLocation(project)).valid, true);
+
+  const first = await service.registerLocation(project);
+  const second = await service.registerLocation(project);
+  assert.equal(first.created, true);
+  assert.equal(second.created, false);
+  assert.equal(first.entry.id, second.entry.id);
+
+  await assert.rejects(
+    service.registerLocation("relative"),
+    InvalidEntryPathError,
+  );
+  await assert.rejects(
+    service.registerLocation(path.join(root, "missing")),
+    SelectedFolderUnavailableError,
+  );
 });
 
 test("starts a declared process Session through a custom Entry action", async (t) => {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "HBOX Integration"
+  short_description: "Create and verify portable HBOX project metadata"
+  default_prompt: "Use $hbox-integration to make this project HBOX compatible and verify its .hbox files."

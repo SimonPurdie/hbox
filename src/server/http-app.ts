@@ -11,7 +11,9 @@ import {
   EntryNotFoundError,
   EntryService,
   EntryUnavailableError,
+  InvalidEntryPathError,
   InvalidPinOrderError,
+  SelectedFolderUnavailableError,
 } from "./entry-service.js";
 import { PickerBusyError } from "./picker.js";
 import {
@@ -112,6 +114,23 @@ export function createHttpServer(
             Connection: "close",
           });
           response.end(body, () => setImmediate(restart));
+          return;
+        }
+
+        if (url.pathname === "/api/entries/inspect") {
+          sendJson(
+            response,
+            200,
+            await service.inspectLocation(await readEntryPath(request)),
+          );
+          return;
+        }
+
+        if (url.pathname === "/api/entries/register") {
+          const result = await service.registerLocation(
+            await readEntryPath(request),
+          );
+          sendJson(response, result.created ? 201 : 200, result.entry);
           return;
         }
 
@@ -247,6 +266,14 @@ export function createHttpServer(
         sendJson(response, 409, { error: "entry_unavailable" });
         return;
       }
+      if (caught instanceof SelectedFolderUnavailableError) {
+        sendJson(response, 409, { error: "entry_unavailable" });
+        return;
+      }
+      if (caught instanceof InvalidEntryPathError) {
+        sendJson(response, 400, { error: "invalid_entry_path" });
+        return;
+      }
       if (caught instanceof EntryNotFoundError) {
         sendJson(response, 404, { error: "entry_not_found" });
         return;
@@ -340,6 +367,29 @@ async function readPreferences(
     }
     throw error;
   }
+}
+
+async function readEntryPath(request: IncomingMessage): Promise<string> {
+  let value: unknown;
+  try {
+    value = await readJsonBody(request);
+  } catch (error) {
+    if (error instanceof InvalidRequestError) {
+      throw new InvalidEntryPathError(error.message);
+    }
+    throw error;
+  }
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("path" in value) ||
+    typeof value.path !== "string"
+  ) {
+    throw new InvalidEntryPathError(
+      "The request must contain a project path.",
+    );
+  }
+  return value.path;
 }
 
 function hasAllowedOrigin(request: IncomingMessage): boolean {
