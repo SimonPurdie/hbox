@@ -68,7 +68,12 @@ test("loads old registries and normalizes their pinned Entry IDs", async (t) => 
   );
   assert.deepEqual(await registry.load(), {
     version: 1,
-    entries: [entry],
+    entries: [
+      {
+        ...entry,
+        lastKnown: { ...entry.lastKnown, actions: [] },
+      },
+    ],
     pinnedEntryIds: [],
   });
 
@@ -80,5 +85,7 @@ test("loads old registries and normalizes their pinned Entry IDs", async (t) => 
       pinnedEntryIds: [entryId, entryId, "missing"],
     }),
   );
-  assert.deepEqual((await registry.load()).pinnedEntryIds, [entryId]);
+  const loaded = await registry.load();
+  assert.deepEqual(loaded.pinnedEntryIds, [entryId]);
+  assert.deepEqual(loaded.entries[0].lastKnown.actions, []);
 });

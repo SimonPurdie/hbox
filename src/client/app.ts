@@ -4,6 +4,7 @@ import {
   tagIconFor,
   type ActionName,
   type ClientEntry,
+  type ClientSession,
   type EntryDetails,
   type MetadataStatus,
   type TagIcon,
@@ -25,8 +26,16 @@ const pinnedEntries = requiredElement<HTMLElement>("pinned-entries");
 const allSection = requiredElement<HTMLElement>("all-section");
 const allEntries = requiredElement<HTMLElement>("all-entries");
 const addButton = requiredElement<HTMLButtonElement>("add-entry");
+const sessionsButton =
+  requiredElement<HTMLButtonElement>("open-sessions");
+const sessionCount = requiredElement<HTMLElement>("session-count");
+const sessionsPane = requiredElement<HTMLElement>("sessions-pane");
+const closeSessionsButton =
+  requiredElement<HTMLButtonElement>("close-sessions");
+const sessionList = requiredElement<HTMLElement>("session-list");
 const configButton = requiredElement<HTMLButtonElement>("open-config");
 const contextMenu = requiredElement<HTMLElement>("context-menu");
+const customActions = requiredElement<HTMLElement>("custom-actions");
 const pinEntryButton = requiredElement<HTMLButtonElement>("pin-entry");
 const manageEntryButton =
   requiredElement<HTMLButtonElement>("manage-entry");
@@ -54,12 +63,21 @@ const detailIcon = requiredElement<HTMLElement>("entry-detail-icon");
 const detailId = requiredElement<HTMLElement>("entry-detail-id");
 
 let entries: ClientEntry[] = [];
+let sessions: ClientSession[] = [];
+let sessionsLoading = false;
 let contextEntry: ClientEntry | null = null;
 let managedEntry: EntryDetails | null = null;
 let detailsOrigin: HTMLElement | null = null;
 let draggedPinnedElement: HTMLButtonElement | null = null;
 
 addButton.addEventListener("click", () => void addEntry());
+sessionsButton.addEventListener("click", () => {
+  setSessionsPaneOpen(sessionsPane.hidden);
+});
+closeSessionsButton.addEventListener("click", () => {
+  setSessionsPaneOpen(false);
+  sessionsButton.focus();
+});
 configButton.addEventListener("click", toggleConfigMenu);
 restartButton.addEventListener("click", () => void restartServer());
 pinEntryButton.addEventListener("click", () => {
@@ -183,6 +201,11 @@ document.addEventListener("keydown", (event) => {
       closeConfigMenu();
       return;
     }
+    if (!sessionsPane.hidden) {
+      setSessionsPaneOpen(false);
+      sessionsButton.focus();
+      return;
+    }
     if (!searchShell.hidden) {
       event.preventDefault();
       hideSearch();
@@ -217,6 +240,8 @@ window.addEventListener("resize", () => {
   closeConfigMenu();
 });
 void loadEntries();
+void loadSessions();
+window.setInterval(() => void loadSessions(), 2_000);
 
 async function loadEntries(): Promise<void> {
   try {
@@ -228,6 +253,27 @@ async function loadEntries(): Promise<void> {
     renderEntries();
   } catch (error) {
     console.error(error);
+  }
+}
+
+async function loadSessions(): Promise<void> {
+  if (sessionsLoading) {
+    return;
+  }
+  sessionsLoading = true;
+  try {
+    const response = await fetch("/api/sessions", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(
+        `Session request failed with status ${response.status}.`,
+      );
+    }
+    sessions = (await response.json()) as ClientSession[];
+    renderSessions();
+  } catch (error) {
+    console.error(error);
+  } finally {
+    sessionsLoading = false;
   }
 }
 
@@ -306,7 +352,9 @@ function populateEntryDetails(entry: EntryDetails): void {
       ? "Open folder"
       : entry.defaultAction === "terminal"
         ? "Open terminal"
-        : "None";
+        : entry.actions.find(
+              (action) => action.id === entry.defaultAction,
+            )?.label ?? "None";
   detailMetadata.textContent = metadataStatusLabel(entry.metadataStatus);
   detailIcon.textContent =
     entry.iconSource.kind === "custom"
@@ -481,6 +529,17 @@ function createEntryIcon(entry: ClientEntry): HTMLElement | null {
 function openContextMenu(entry: ClientEntry, x: number, y: number): void {
   closeConfigMenu();
   contextEntry = entry;
+  customActions.replaceChildren(
+    ...entry.actions.map((action) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.dataset.action = action.id;
+      button.textContent = action.label;
+      button.disabled = !entry.available;
+      return button;
+    }),
+  );
   for (const button of contextMenu.querySelectorAll<HTMLButtonElement>(
     "button[data-action]",
   )) {
@@ -607,15 +666,172 @@ async function runAction(
 
   try {
     const response = await fetch(
-      `/api/entries/${encodeURIComponent(entry.id)}/actions/${action}`,
+      `/api/entries/${encodeURIComponent(entry.id)}/actions/${encodeURIComponent(action)}`,
       { method: "POST" },
     );
     if (!response.ok) {
       throw new Error(`Action failed with status ${response.status}.`);
     }
+    await loadSessions();
   } catch (error) {
     console.error(error);
   }
+}
+
+function setSessionsPaneOpen(open: boolean): void {
+  closeContextMenu();
+  closeConfigMenu();
+  sessionsPane.hidden = !open;
+  document.body.classList.toggle("sessions-open", open);
+  sessionsButton.setAttribute("aria-expanded", String(open));
+  if (open) {
+    void loadSessions();
+  }
+}
+
+function renderSessions(): void {
+  sessionCount.hidden = sessions.length === 0;
+  sessionCount.textContent =
+    sessions.length > 99 ? "99+" : String(sessions.length);
+  sessionsButton.setAttribute(
+    "aria-label",
+    sessions.length === 0
+      ? "Sessions"
+      : `Sessions, ${sessions.length} ongoing or unresolved`,
+  );
+  sessionList.replaceChildren(
+    ...sessions.map(createSessionElement),
+  );
+}
+
+function createSessionElement(session: ClientSession): HTMLElement {
+  const item = document.createElement("article");
+  item.className = "session-item";
+  item.dataset.status = session.status;
+
+  const identity = document.createElement("div");
+  identity.className = "session-identity";
+  const name = document.createElement("div");
+  name.className = "session-name";
+  name.textContent = session.name;
+  const entry = document.createElement("div");
+  entry.className = "session-entry";
+  entry.textContent = session.entryName;
+  identity.append(name, entry);
+
+  const state = document.createElement("div");
+  state.className = "session-state";
+  const status = document.createElement("div");
+  status.className = "session-status";
+  status.textContent = sessionStatusLabel(session.status);
+  const secondary = document.createElement("div");
+  secondary.className = session.message
+    ? "session-message"
+    : "session-age";
+  secondary.textContent =
+    session.message ?? `Started ${relativeTime(session.startedAt)}`;
+  secondary.title = session.message ?? session.startedAt;
+  state.append(status, secondary);
+
+  const actions = document.createElement("div");
+  actions.className = "session-actions";
+  if (session.canOpen) {
+    actions.append(sessionActionButton(session, "Open", "open"));
+  }
+  if (session.canStop) {
+    actions.append(sessionActionButton(session, "Stop", "stop"));
+  }
+  if (session.canRestart) {
+    actions.append(
+      sessionActionButton(session, "Restart", "restart"),
+    );
+  }
+  if (session.canRecheck) {
+    actions.append(
+      sessionActionButton(session, "Check again", "recheck"),
+    );
+  }
+  if (session.canForget) {
+    actions.append(
+      sessionActionButton(session, "Forget", "forget"),
+    );
+  }
+
+  item.append(identity, state, actions);
+  return item;
+}
+
+function sessionActionButton(
+  session: ClientSession,
+  label: string,
+  action: "open" | "stop" | "restart" | "recheck" | "forget",
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    void performSessionAction(session.id, action);
+  });
+  return button;
+}
+
+async function performSessionAction(
+  sessionId: string,
+  action: "open" | "stop" | "restart" | "recheck" | "forget",
+): Promise<void> {
+  try {
+    const response = await fetch(
+      action === "forget"
+        ? `/api/sessions/${encodeURIComponent(sessionId)}`
+        : `/api/sessions/${encodeURIComponent(sessionId)}/${action}`,
+      { method: action === "forget" ? "DELETE" : "POST" },
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Session ${action} failed with status ${response.status}.`,
+      );
+    }
+  } catch (error) {
+    console.error(error);
+  } finally {
+    await loadSessions();
+  }
+}
+
+function sessionStatusLabel(
+  status: ClientSession["status"],
+): string {
+  switch (status) {
+    case "starting":
+      return "Starting";
+    case "running":
+      return "Running";
+    case "degraded":
+      return "Degraded";
+    case "stopping":
+      return "Stopping";
+    case "failed":
+      return "Failed";
+    case "disconnected":
+      return "Disconnected";
+  }
+}
+
+function relativeTime(startedAt: string): string {
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - Date.parse(startedAt)) / 1_000),
+  );
+  if (elapsedSeconds < 60) {
+    return elapsedSeconds < 2 ? "just now" : `${elapsedSeconds}s ago`;
+  }
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes}m ago`;
+  }
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  return `${elapsedHours}h ago`;
 }
 
 function hideSearch(): void {

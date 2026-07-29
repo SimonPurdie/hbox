@@ -6,6 +6,8 @@ import type {
   EntryLocation,
   EntryPresentation,
   MetadataStatus,
+  ProcessSessionDefinition,
+  StartSessionActionDefinition,
 } from "./types.js";
 
 const runtimePath = process.platform === "win32" ? path.win32 : path;
@@ -18,6 +20,8 @@ export interface CustomIconSource {
 
 export interface MetadataResult {
   presentation: EntryPresentation;
+  actionDefinitions: StartSessionActionDefinition[];
+  sessionDefinitions: ProcessSessionDefinition[];
   customIconSource: CustomIconSource | null;
   metadataStatus: MetadataStatus;
 }
@@ -43,17 +47,23 @@ export async function readEntryMetadata(
     name: inferredName(location),
     tags: [],
     defaultAction: null,
+    actions: [],
     hasCustomIcon: false,
   };
 
   let presentation = fallback;
+  let actionDefinitions: StartSessionActionDefinition[] = [];
+  let sessionDefinitions: ProcessSessionDefinition[] = [];
   let metadataStatus: MetadataStatus = "not_found";
   try {
     const raw = await readFile(metadataPath, "utf8");
     try {
       const parsed: unknown = JSON.parse(raw);
       if (isRecord(parsed)) {
-        presentation = parseMetadataValue(parsed, fallback);
+        const metadata = parseMetadataValue(parsed, fallback);
+        presentation = metadata.presentation;
+        actionDefinitions = metadata.actionDefinitions;
+        sessionDefinitions = metadata.sessionDefinitions;
         metadataStatus = "loaded";
       } else {
         metadataStatus = "invalid";
@@ -73,11 +83,19 @@ export async function readEntryMetadata(
   try {
     const iconInfo = await stat(iconPath);
     if (!iconInfo.isFile()) {
-      return { presentation, customIconSource: null, metadataStatus };
+      return {
+        presentation,
+        actionDefinitions,
+        sessionDefinitions,
+        customIconSource: null,
+        metadataStatus,
+      };
     }
 
     return {
       presentation,
+      actionDefinitions,
+      sessionDefinitions,
       customIconSource: {
         path: iconPath,
         modifiedTimeMs: iconInfo.mtimeMs,
@@ -89,7 +107,13 @@ export async function readEntryMetadata(
     if (!isMissingFileError(error)) {
       warn(`Could not read ${iconPath}: ${errorMessage(error)}`);
     }
-    return { presentation, customIconSource: null, metadataStatus };
+    return {
+      presentation,
+      actionDefinitions,
+      sessionDefinitions,
+      customIconSource: null,
+      metadataStatus,
+    };
   }
 }
 
@@ -104,15 +128,23 @@ export function parseMetadata(
     return fallback;
   }
 
-  return parseMetadataValue(value, fallback);
+  return parseMetadataValue(value, fallback).presentation;
 }
 
 function parseMetadataValue(
   value: unknown,
   fallback: EntryPresentation,
-): EntryPresentation {
+): {
+  presentation: EntryPresentation;
+  actionDefinitions: StartSessionActionDefinition[];
+  sessionDefinitions: ProcessSessionDefinition[];
+} {
   if (!isRecord(value)) {
-    return fallback;
+    return {
+      presentation: fallback,
+      actionDefinitions: [],
+      sessionDefinitions: [],
+    };
   }
   const name =
     typeof value.name === "string" && value.name.trim()
@@ -130,20 +162,145 @@ function parseMetadataValue(
       ]
     : [];
 
-  const defaultAction = isActionName(value.defaultAction)
+  const sessionDefinitions = parseSessionDefinitions(value.sessions);
+  const sessionIds = new Set(
+    sessionDefinitions.map((definition) => definition.id),
+  );
+  const actionDefinitions = parseActionDefinitions(
+    value.actions,
+    sessionIds,
+  );
+  const actionIds = new Set(
+    actionDefinitions.map((definition) => definition.id),
+  );
+  const defaultAction = isActionName(value.defaultAction, actionIds)
     ? value.defaultAction
     : null;
 
   return {
-    name,
-    tags,
-    defaultAction,
-    hasCustomIcon: false,
+    presentation: {
+      name,
+      tags,
+      defaultAction,
+      actions: actionDefinitions.map(({ id, label }) => ({ id, label })),
+      hasCustomIcon: false,
+    },
+    actionDefinitions,
+    sessionDefinitions,
   };
 }
 
-function isActionName(value: unknown): value is ActionName {
-  return value === "folder" || value === "terminal";
+function parseSessionDefinitions(
+  value: unknown,
+): ProcessSessionDefinition[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const definitions: ProcessSessionDefinition[] = [];
+  for (const [id, candidate] of Object.entries(value)) {
+    if (
+      !isDefinitionId(id) ||
+      !isRecord(candidate) ||
+      candidate.type !== "process" ||
+      typeof candidate.label !== "string" ||
+      !candidate.label.trim() ||
+      !isCommand(candidate.command)
+    ) {
+      continue;
+    }
+
+    const readyUrl = parseOptionalUrl(candidate.readyUrl);
+    const openUrl = parseOptionalUrl(candidate.openUrl);
+    if (readyUrl === undefined || openUrl === undefined) {
+      continue;
+    }
+
+    definitions.push({
+      id,
+      type: "process",
+      label: candidate.label.trim(),
+      command: [...candidate.command],
+      readyUrl,
+      openUrl,
+      singleInstance: candidate.singleInstance !== false,
+    });
+  }
+  return definitions;
+}
+
+function parseActionDefinitions(
+  value: unknown,
+  sessionIds: ReadonlySet<string>,
+): StartSessionActionDefinition[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const definitions: StartSessionActionDefinition[] = [];
+  for (const [id, candidate] of Object.entries(value)) {
+    if (
+      !isDefinitionId(id) ||
+      id === "folder" ||
+      id === "terminal" ||
+      !isRecord(candidate) ||
+      typeof candidate.label !== "string" ||
+      !candidate.label.trim() ||
+      typeof candidate.starts !== "string" ||
+      !sessionIds.has(candidate.starts)
+    ) {
+      continue;
+    }
+    definitions.push({
+      id,
+      label: candidate.label.trim(),
+      starts: candidate.starts,
+    });
+  }
+  return definitions;
+}
+
+function isDefinitionId(value: string): boolean {
+  return /^[a-z0-9][a-z0-9_-]*$/.test(value);
+}
+
+function isCommand(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (part) => typeof part === "string" && part.length > 0,
+    )
+  );
+}
+
+function parseOptionalUrl(value: unknown): string | null | undefined {
+  if (value === undefined) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isActionName(
+  value: unknown,
+  customActionIds: ReadonlySet<string>,
+): value is ActionName {
+  return (
+    typeof value === "string" &&
+    (value === "folder" ||
+      value === "terminal" ||
+      customActionIds.has(value))
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

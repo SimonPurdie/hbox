@@ -7,6 +7,9 @@ import { WindowsActionLauncher } from "./launcher.js";
 import { PowerShellFolderPicker } from "./picker.js";
 import { defaultDataDirectory, Registry } from "./registry.js";
 import { rebuildAndReplaceCurrentProcess } from "./restart.js";
+import { SessionManager } from "./session-manager.js";
+import { SessionStore } from "./session-store.js";
+import { WslSessionRuntime } from "./wsl-session-runtime.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4269;
@@ -17,11 +20,21 @@ const staticDirectory = path.resolve(
 );
 
 try {
-  const registry = new Registry(defaultDataDirectory());
+  const dataDirectory = defaultDataDirectory();
+  const registry = new Registry(dataDirectory);
+  const launcher = new WindowsActionLauncher();
+  const sessions = new SessionManager(
+    new SessionStore(dataDirectory),
+    new WslSessionRuntime(),
+    launcher,
+  );
+  await sessions.initialize();
   const service = new EntryService(
     registry,
     new PowerShellFolderPicker(),
-    new WindowsActionLauncher(),
+    launcher,
+    console.warn,
+    sessions,
   );
   await service.initialize();
 
@@ -37,6 +50,7 @@ try {
       restarting = true;
       void rebuildAndReplaceCurrentProcess(server)
         .then(() => {
+          sessions.close();
           process.exit(0);
         })
         .catch((restartError: unknown) => {
@@ -49,6 +63,7 @@ try {
         });
     },
     INSTANCE_ID,
+    sessions,
   );
   server.listen(PORT, HOST, () => {
     console.log(`HBOX is ready at http://${HOST}:${PORT}`);

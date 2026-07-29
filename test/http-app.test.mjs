@@ -271,3 +271,82 @@ test("protects pin mutations and accepts an explicit pin order", async (t) => {
     400,
   );
 });
+
+test("serves and controls Sessions through protected endpoints", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+
+  const calls = [];
+  const listed = [{ id: "session-a", status: "running" }];
+  const sessions = {
+    listSessions: async () => listed,
+    openSession: async (id) => calls.push({ action: "open", id }),
+    stopSession: async (id) => calls.push({ action: "stop", id }),
+    restartSession: async (id) => calls.push({ action: "restart", id }),
+    recheckSession: async (id) => calls.push({ action: "recheck", id }),
+    forgetSession: async (id) => calls.push({ action: "forget", id }),
+  };
+  const service = {
+    listEntries: async () => [],
+    registerFromPicker: async () => null,
+    performAction: async () => {},
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const server = createHttpServer(
+    service,
+    staticDirectory,
+    () => {},
+    undefined,
+    "test-instance",
+    sessions,
+  );
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  assert.deepEqual(
+    await fetch(`${baseUrl}/api/sessions`).then((response) =>
+      response.json(),
+    ),
+    listed,
+  );
+  assert.equal(
+    (
+      await fetch(`${baseUrl}/api/sessions/session-a/stop`, {
+        method: "POST",
+      })
+    ).status,
+    403,
+  );
+
+  const headers = { Origin: baseUrl };
+  for (const action of ["open", "stop", "restart", "recheck"]) {
+    assert.equal(
+      (
+        await fetch(
+          `${baseUrl}/api/sessions/session-a/${action}`,
+          { method: "POST", headers },
+        )
+      ).status,
+      202,
+    );
+  }
+  assert.equal(
+    (
+      await fetch(`${baseUrl}/api/sessions/session-a`, {
+        method: "DELETE",
+        headers,
+      })
+    ).status,
+    204,
+  );
+  assert.deepEqual(calls, [
+    { action: "open", id: "session-a" },
+    { action: "stop", id: "session-a" },
+    { action: "restart", id: "session-a" },
+    { action: "recheck", id: "session-a" },
+    { action: "forget", id: "session-a" },
+  ]);
+});

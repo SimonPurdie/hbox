@@ -21,6 +21,10 @@
     </main>
 
     <div class="toolbar">
+      <button id="open-sessions" class="toolbar-icon sessions-icon" type="button" aria-label="Sessions" aria-controls="sessions-pane" aria-expanded="false">
+        <img src="/assets/icons/sessions.svg" alt="">
+        <span id="session-count" class="session-count" hidden></span>
+      </button>
       <button id="add-entry" class="toolbar-icon add-entry" type="button" aria-label="Add Entry">
         <img src="/assets/icons/add.svg" alt="">
       </button>
@@ -32,6 +36,7 @@
     <div id="context-menu" class="context-menu" role="menu" hidden>
       <button type="button" role="menuitem" data-action="folder">Open folder</button>
       <button type="button" role="menuitem" data-action="terminal">Open terminal</button>
+      <div id="custom-actions" class="custom-actions"></div>
       <button id="pin-entry" class="pin-entry" type="button" role="menuitem">Pin to top</button>
       <button id="manage-entry" class="manage-entry" type="button" role="menuitem">Manage Entry</button>
     </div>
@@ -44,6 +49,16 @@
       <img src="/assets/icons/search.svg" alt="">
       <input id="search" type="text" aria-label="Search Entries" autocomplete="off" spellcheck="false">
     </div>
+
+    <section id="sessions-pane" class="sessions-pane" aria-labelledby="sessions-title" hidden>
+      <header class="sessions-header">
+        <h2 id="sessions-title">Sessions</h2>
+        <button id="close-sessions" class="close-sessions" type="button" aria-label="Close Sessions">
+          <img src="/assets/icons/close.svg" alt="">
+        </button>
+      </header>
+      <div id="session-list" class="session-list"></div>
+    </section>
 
     <dialog id="entry-details-dialog" class="entry-details-dialog" aria-labelledby="entry-details-title">
       <section class="entry-details-panel">

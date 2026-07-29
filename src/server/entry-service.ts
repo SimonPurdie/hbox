@@ -19,8 +19,10 @@ import {
 } from "./svg-normalizer.js";
 import type { ActionLauncher } from "./launcher.js";
 import type { FolderPicker } from "./picker.js";
+import type { SessionManager } from "./session-manager.js";
 import {
   type ActionName,
+  type BuiltInActionName,
   type ClientEntry,
   type EntryDetails,
   type EntryLocation,
@@ -48,6 +50,12 @@ export class InvalidPinOrderError extends Error {
   }
 }
 
+export class ActionNotFoundError extends Error {
+  constructor(action: string) {
+    super(`Entry action not found: ${action}`);
+  }
+}
+
 export interface RegistrationResult {
   entry: ClientEntry;
   created: boolean;
@@ -59,6 +67,7 @@ export class EntryService {
     private readonly picker: FolderPicker,
     private readonly launcher: ActionLauncher,
     private readonly warn: (message: string) => void = console.warn,
+    private readonly sessionManager?: Pick<SessionManager, "startSession">,
   ) {}
 
   async initialize(): Promise<void> {
@@ -156,7 +165,24 @@ export class EntryService {
       throw new EntryUnavailableError(entryId);
     }
 
-    await this.launcher.launch(action, entry.location);
+    if (isBuiltInAction(action)) {
+      await this.launcher.launch(action, entry.location);
+      return;
+    }
+
+    const metadata = await readEntryMetadata(entry.location, this.warn);
+    const actionDefinition = metadata.actionDefinitions.find(
+      (candidate) => candidate.id === action,
+    );
+    const sessionDefinition = actionDefinition
+      ? metadata.sessionDefinitions.find(
+          (candidate) => candidate.id === actionDefinition.starts,
+        )
+      : undefined;
+    if (!actionDefinition || !sessionDefinition || !this.sessionManager) {
+      throw new ActionNotFoundError(action);
+    }
+    await this.sessionManager.startSession(entry, sessionDefinition);
   }
 
   async getEntryDetails(entryId: string): Promise<EntryDetails> {
@@ -398,10 +424,15 @@ function toClientEntry(
     name: entry.lastKnown.name,
     tags: [...entry.lastKnown.tags],
     defaultAction: entry.lastKnown.defaultAction,
+    actions: entry.lastKnown.actions.map((action) => ({ ...action })),
     available,
     hasCustomIcon: entry.lastKnown.hasCustomIcon,
     pinnedPosition,
   };
+}
+
+function isBuiltInAction(action: string): action is BuiltInActionName {
+  return action === "folder" || action === "terminal";
 }
 
 function toEntryDetails(

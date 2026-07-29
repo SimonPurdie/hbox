@@ -1,9 +1,9 @@
 # HBOX
 
 HBOX, short for Hitbutton Omni Executor, is a local Windows web hub for
-organising and launching personal folders and projects. This first vertical
-slice registers Windows and WSL folders, searches them by name or tag, and
-opens them in Explorer or Windows Terminal.
+organising and launching personal folders and projects. It registers Windows
+and WSL folders, searches them by name or tag, opens them in Explorer or
+Windows Terminal, and manages project-defined WSL process Sessions.
 
 ## Run
 
@@ -19,7 +19,7 @@ the browser automatically. `npm start` performs a fresh production build before
 starting the server.
 
 The Config menu can rebuild and restart the running server without access to
-its original terminal.
+its original terminal. Running project Sessions persist through this restart.
 
 Right-click an Entry and select **Manage Entry** to view its location, metadata,
 and other diagnostics. **Remove Entry** unregisters it from HBOX without
@@ -44,8 +44,9 @@ A registered folder can contain `.hbox/entry.json`:
 }
 ```
 
-All fields are optional. `defaultAction` can be `folder` or `terminal`. A custom
-`.hbox/icon.svg` takes precedence over a built-in tag icon.
+All fields are optional. `defaultAction` can be `folder`, `terminal`, or the ID
+of a declared custom action. A custom `.hbox/icon.svg` takes precedence over a
+built-in tag icon.
 
 Built-in tag icons use this global priority, regardless of the order of an
 Entry's tags. Entries without a custom or applicable tag icon use the fallback
@@ -61,6 +62,51 @@ icon.
 
 To add a WSL-native folder, browse to its
 `\\wsl.localhost\<distribution>\...` location in the Add dialog.
+
+## Process Sessions
+
+A WSL Entry can declare an action that starts a process Session:
+
+```json
+{
+  "name": "My web app",
+  "tags": ["web"],
+  "defaultAction": "start-app",
+  "actions": {
+    "start-app": {
+      "label": "Start app",
+      "starts": "dev-server"
+    }
+  },
+  "sessions": {
+    "dev-server": {
+      "type": "process",
+      "label": "Development server",
+      "command": ["npm", "run", "dev"],
+      "readyUrl": "http://127.0.0.1:5173",
+      "openUrl": "http://127.0.0.1:5173",
+      "singleInstance": true
+    }
+  }
+}
+```
+
+The command array keeps the executable and each argument separate. HBOX starts
+it from an interactive Bash environment in the Entry folder, without parsing
+the array as a shell command string. This makes tools installed by WSL shell
+initialisation available while preserving argument boundaries. HBOX opens
+`openUrl` after `readyUrl` responds. Starting a running single-instance Session
+opens its URL instead of creating a duplicate.
+
+The Sessions button opens the bottom pane. Clean stops disappear. Failed or
+disconnected Sessions remain until they are restarted or forgotten. HBOX
+verifies the WSL boot, process start time, process group, and Session token
+before it sends a stop signal. If it cannot verify that identity, it marks the
+Session as disconnected and disables destructive actions.
+
+Process commands must remain in the foreground. Programs that detach themselves
+need a different Session type and are not supported by this first
+implementation.
 
 ## Development
 

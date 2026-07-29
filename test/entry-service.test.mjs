@@ -118,6 +118,60 @@ test("returns the existing Entry when the picker selects a duplicate", async (t)
   assert.equal((await service.listEntries()).length, 1);
 });
 
+test("starts a declared process Session through a custom Entry action", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-actions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  await mkdir(path.join(project, ".hbox"), { recursive: true });
+  await writeFile(
+    path.join(project, ".hbox", "entry.json"),
+    JSON.stringify({
+      name: "Web Project",
+      defaultAction: "start-app",
+      actions: {
+        "start-app": { label: "Start app", starts: "dev-server" },
+      },
+      sessions: {
+        "dev-server": {
+          type: "process",
+          label: "Development server",
+          command: ["npm", "run", "dev"],
+          readyUrl: "http://127.0.0.1:5173",
+          openUrl: "http://127.0.0.1:5173",
+        },
+      },
+    }),
+  );
+
+  const starts = [];
+  const service = new EntryService(
+    new Registry(path.join(root, "app-data")),
+    { pick: async () => project },
+    { launch: async () => {}, openUrl: async () => {} },
+    () => {},
+    {
+      startSession: async (entry, definition) => {
+        starts.push({ entry, definition });
+      },
+    },
+  );
+
+  const registration = await service.registerFromPicker();
+  assert.equal(registration.entry.defaultAction, "start-app");
+  assert.deepEqual(registration.entry.actions, [
+    { id: "start-app", label: "Start app" },
+  ]);
+
+  await service.performAction(registration.entry.id, "start-app");
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].entry.id, registration.entry.id);
+  assert.deepEqual(starts[0].definition.command, ["npm", "run", "dev"]);
+  await assert.rejects(
+    service.performAction(registration.entry.id, "missing-action"),
+    /action not found/i,
+  );
+});
+
 test("reports the canonical built-in icon source in details", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "hbox-details-"));
   t.after(() => rm(root, { recursive: true, force: true }));

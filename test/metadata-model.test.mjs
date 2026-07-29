@@ -17,10 +17,11 @@ const fallback = {
   name: "Folder Name",
   tags: [],
   defaultAction: null,
+  actions: [],
   hasCustomIcon: false,
 };
 
-test("metadata normalizes tags and accepts only known defaults", () => {
+test("metadata normalizes tags and accepts built-in and declared defaults", () => {
   assert.deepEqual(
     parseMetadata(
       JSON.stringify({
@@ -34,6 +35,7 @@ test("metadata normalizes tags and accepts only known defaults", () => {
       name: "My Tool",
       tags: ["web", "code"],
       defaultAction: "terminal",
+      actions: [],
       hasCustomIcon: false,
     },
   );
@@ -41,6 +43,36 @@ test("metadata normalizes tags and accepts only known defaults", () => {
   assert.deepEqual(
     parseMetadata('{"defaultAction":"run"}', fallback),
     fallback,
+  );
+  assert.deepEqual(
+    parseMetadata(
+      JSON.stringify({
+        defaultAction: "start-app",
+        actions: {
+          "start-app": {
+            label: "Start app",
+            starts: "dev-server",
+          },
+        },
+        sessions: {
+          "dev-server": {
+            type: "process",
+            label: "Development server",
+            command: ["npm", "run", "dev"],
+            readyUrl: "http://127.0.0.1:5173",
+            openUrl: "http://127.0.0.1:5173",
+          },
+        },
+      }),
+      fallback,
+    ),
+    {
+      name: "Folder Name",
+      tags: [],
+      defaultAction: "start-app",
+      actions: [{ id: "start-app", label: "Start app" }],
+      hasCustomIcon: false,
+    },
   );
   assert.deepEqual(parseMetadata("{", fallback), fallback);
 });
@@ -50,6 +82,7 @@ test("tag icon selection uses canonical priority rather than entry order", () =>
     id: "entry",
     name: "Entry",
     defaultAction: null,
+    actions: [],
     available: true,
     hasCustomIcon: false,
     pinnedPosition: null,
@@ -80,6 +113,7 @@ test("search matches case-insensitive name and tag substrings", () => {
     name: "Omni Executor",
     tags: ["Agent", "web-app"],
     defaultAction: null,
+    actions: [],
     available: false,
     hasCustomIcon: false,
     pinnedPosition: null,
@@ -132,4 +166,51 @@ test("reports loaded, missing, and invalid metadata states", async (t) => {
     "loaded",
   );
   assert.equal(warnings.length, 1);
+});
+
+test("loads validated action and process Session definitions", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-metadata-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, ".hbox"));
+  await writeFile(
+    path.join(root, ".hbox", "entry.json"),
+    JSON.stringify({
+      actions: {
+        "start-app": { label: "Start app", starts: "dev-server" },
+        broken: { label: "Broken", starts: "missing" },
+      },
+      sessions: {
+        "dev-server": {
+          type: "process",
+          label: "Development server",
+          command: ["npm", "run", "dev"],
+          readyUrl: "http://127.0.0.1:5173",
+          openUrl: "http://127.0.0.1:5173",
+        },
+      },
+    }),
+  );
+
+  const metadata = await readEntryMetadata({
+    kind: "windows",
+    path: root,
+  });
+  assert.deepEqual(metadata.actionDefinitions, [
+    {
+      id: "start-app",
+      label: "Start app",
+      starts: "dev-server",
+    },
+  ]);
+  assert.deepEqual(metadata.sessionDefinitions, [
+    {
+      id: "dev-server",
+      type: "process",
+      label: "Development server",
+      command: ["npm", "run", "dev"],
+      readyUrl: "http://127.0.0.1:5173/",
+      openUrl: "http://127.0.0.1:5173/",
+      singleInstance: true,
+    },
+  ]);
 });

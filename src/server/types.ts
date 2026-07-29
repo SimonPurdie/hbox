@@ -11,7 +11,8 @@ export const TAG_ICON_PRIORITY = [
 ] as const;
 
 export type TagIcon = (typeof TAG_ICON_PRIORITY)[number];
-export type ActionName = "folder" | "terminal";
+export type BuiltInActionName = "folder" | "terminal";
+export type ActionName = string;
 export type MetadataStatus =
   | "loaded"
   | "not_found"
@@ -32,10 +33,31 @@ export interface WslLocation {
 
 export type EntryLocation = WindowsLocation | WslLocation;
 
+export interface EntryActionPresentation {
+  id: string;
+  label: string;
+}
+
+export interface StartSessionActionDefinition
+  extends EntryActionPresentation {
+  starts: string;
+}
+
+export interface ProcessSessionDefinition {
+  id: string;
+  type: "process";
+  label: string;
+  command: string[];
+  readyUrl: string | null;
+  openUrl: string | null;
+  singleInstance: boolean;
+}
+
 export interface EntryPresentation {
   name: string;
   tags: string[];
   defaultAction: ActionName | null;
+  actions: EntryActionPresentation[];
   hasCustomIcon: boolean;
 }
 
@@ -56,6 +78,7 @@ export interface ClientEntry {
   name: string;
   tags: string[];
   defaultAction: ActionName | null;
+  actions: EntryActionPresentation[];
   available: boolean;
   hasCustomIcon: boolean;
   pinnedPosition: number | null;
@@ -73,4 +96,30 @@ export interface EntryDetails extends ClientEntry {
   location: string;
   metadataStatus: MetadataStatus;
   iconSource: IconSource;
+}
+
+export type SessionStatus =
+  | "starting"
+  | "running"
+  | "degraded"
+  | "stopping"
+  | "failed"
+  | "disconnected";
+
+export interface ClientSession {
+  id: string;
+  entryId: string;
+  entryName: string;
+  definitionId: string;
+  name: string;
+  status: SessionStatus;
+  startedAt: string;
+  readyAt: string | null;
+  url: string | null;
+  message: string | null;
+  canOpen: boolean;
+  canStop: boolean;
+  canRestart: boolean;
+  canForget: boolean;
+  canRecheck: boolean;
 }

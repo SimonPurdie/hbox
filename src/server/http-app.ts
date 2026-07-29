@@ -7,19 +7,27 @@ import {
   type ServerResponse,
 } from "node:http";
 import {
+  ActionNotFoundError,
   EntryNotFoundError,
   EntryService,
   EntryUnavailableError,
   InvalidPinOrderError,
 } from "./entry-service.js";
 import { PickerBusyError } from "./picker.js";
-import type { ActionName } from "./types.js";
+import {
+  SessionActionUnavailableError,
+  SessionConflictError,
+  type SessionManager,
+  SessionNotFoundError,
+} from "./session-manager.js";
 
-const ACTION_PATTERN =
-  /^\/api\/entries\/([^/]+)\/actions\/(folder|terminal)$/;
+const ACTION_PATTERN = /^\/api\/entries\/([^/]+)\/actions\/([^/]+)$/;
 const ICON_PATTERN = /^\/api\/entries\/([^/]+)\/icon$/;
 const PIN_PATTERN = /^\/api\/entries\/([^/]+)\/pin$/;
 const ENTRY_PATTERN = /^\/api\/entries\/([^/]+)$/;
+const SESSION_ACTION_PATTERN =
+  /^\/api\/sessions\/([^/]+)\/(open|stop|restart|recheck)$/;
+const SESSION_PATTERN = /^\/api\/sessions\/([^/]+)$/;
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 class InvalidRequestError extends Error {}
@@ -30,6 +38,7 @@ export function createHttpServer(
   error: (message: string) => void = console.error,
   restart?: () => void,
   instanceId: string = `${process.pid}`,
+  sessions?: SessionManager,
 ): Server {
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -52,6 +61,15 @@ export function createHttpServer(
 
       if (request.method === "GET" && url.pathname === "/api/status") {
         sendJson(response, 200, { instanceId });
+        return;
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/sessions") {
+        sendJson(
+          response,
+          200,
+          sessions ? await sessions.listSessions() : [],
+        );
         return;
       }
 
@@ -104,8 +122,33 @@ export function createHttpServer(
         const actionMatch = ACTION_PATTERN.exec(url.pathname);
         if (actionMatch) {
           const entryId = decodeURIComponent(actionMatch[1] ?? "");
-          const action = actionMatch[2] as ActionName;
+          const action = decodeURIComponent(actionMatch[2] ?? "");
           await service.performAction(entryId, action);
+          response.writeHead(202).end();
+          return;
+        }
+
+        const sessionActionMatch = SESSION_ACTION_PATTERN.exec(
+          url.pathname,
+        );
+        if (sessionActionMatch && sessions) {
+          const sessionId = decodeURIComponent(
+            sessionActionMatch[1] ?? "",
+          );
+          switch (sessionActionMatch[2]) {
+            case "open":
+              await sessions.openSession(sessionId);
+              break;
+            case "stop":
+              await sessions.stopSession(sessionId);
+              break;
+            case "restart":
+              await sessions.restartSession(sessionId);
+              break;
+            case "recheck":
+              await sessions.recheckSession(sessionId);
+              break;
+          }
           response.writeHead(202).end();
           return;
         }
@@ -118,6 +161,14 @@ export function createHttpServer(
       }
 
       if (request.method === "DELETE") {
+        const sessionMatch = SESSION_PATTERN.exec(url.pathname);
+        if (sessionMatch && sessions) {
+          const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
+          await sessions.forgetSession(sessionId);
+          response.writeHead(204).end();
+          return;
+        }
+
         const pinMatch = PIN_PATTERN.exec(url.pathname);
         if (pinMatch) {
           const entryId = decodeURIComponent(pinMatch[1] ?? "");
@@ -171,6 +222,24 @@ export function createHttpServer(
       }
       if (caught instanceof EntryNotFoundError) {
         sendJson(response, 404, { error: "entry_not_found" });
+        return;
+      }
+      if (caught instanceof ActionNotFoundError) {
+        sendJson(response, 404, { error: "action_not_found" });
+        return;
+      }
+      if (caught instanceof SessionNotFoundError) {
+        sendJson(response, 404, { error: "session_not_found" });
+        return;
+      }
+      if (caught instanceof SessionConflictError) {
+        sendJson(response, 409, { error: "session_conflict" });
+        return;
+      }
+      if (caught instanceof SessionActionUnavailableError) {
+        sendJson(response, 409, {
+          error: "session_action_unavailable",
+        });
         return;
       }
       if (caught instanceof PickerBusyError) {

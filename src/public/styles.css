@@ -1,4 +1,5 @@
 :root {
+  --sessions-pane-height: min(230px, 42vh);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #fff;
   background: #2765f4;
@@ -43,6 +44,10 @@ body {
   overflow: auto;
   scrollbar-width: thin;
   scrollbar-color: rgb(255 255 255 / 35%) transparent;
+}
+
+body.sessions-open .desktop {
+  padding-bottom: calc(var(--sessions-pane-height) + 20px);
 }
 
 .entry-section:not([hidden]) + .entry-section:not([hidden]) {
@@ -189,6 +194,7 @@ body {
 }
 
 .toolbar-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 32px;
@@ -199,6 +205,24 @@ body {
   color: rgb(255 255 255 / 92%);
   background: rgb(20 43 72 / 11%);
   backdrop-filter: blur(8px);
+}
+
+.session-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 1px solid rgb(255 255 255 / 65%);
+  border-radius: 9px;
+  color: #fff;
+  background: #263a55;
+  box-shadow: 0 2px 7px rgb(8 29 57 / 24%);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
 }
 
 .toolbar-icon img {
@@ -275,6 +299,14 @@ button.toolbar-icon:disabled {
   margin-top: 5px;
   padding-top: 9px;
   border-top: 1px solid rgb(27 43 67 / 12%);
+}
+
+.custom-actions:empty {
+  display: none;
+}
+
+.custom-actions button {
+  display: block;
 }
 
 .config-menu {
@@ -456,6 +488,10 @@ button.toolbar-icon:disabled {
   backdrop-filter: blur(18px);
 }
 
+body.sessions-open .search-shell {
+  bottom: calc(var(--sessions-pane-height) + 14px);
+}
+
 .search-shell img {
   flex: 0 0 auto;
   width: 18px;
@@ -474,6 +510,164 @@ button.toolbar-icon:disabled {
   font-size: 14px;
 }
 
+.sessions-pane {
+  position: fixed;
+  z-index: 12;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--sessions-pane-height);
+  color: #1b2b43;
+  background: rgb(247 250 253 / 94%);
+  border-top: 1px solid rgb(255 255 255 / 62%);
+  box-shadow: 0 -14px 34px rgb(8 29 57 / 18%);
+  backdrop-filter: blur(20px);
+}
+
+.sessions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 17px 0 22px;
+  border-bottom: 1px solid rgb(27 43 67 / 10%);
+}
+
+.sessions-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.close-sessions {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+.close-sessions:hover,
+.close-sessions:focus-visible {
+  background: rgb(37 78 126 / 9%);
+  outline: none;
+}
+
+.close-sessions img {
+  width: 17px;
+  height: 17px;
+}
+
+.session-list {
+  height: calc(100% - 48px);
+  padding: 7px 14px 12px;
+  overflow-y: auto;
+}
+
+.session-item {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 0.8fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 58px;
+  padding: 8px 9px;
+  border-bottom: 1px solid rgb(27 43 67 / 8%);
+}
+
+.session-identity,
+.session-state {
+  min-width: 0;
+}
+
+.session-name,
+.session-entry,
+.session-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-name {
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 18px;
+}
+
+.session-entry,
+.session-message,
+.session-age {
+  color: rgb(27 43 67 / 56%);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 17px;
+}
+
+.session-status::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #758396;
+  content: "";
+}
+
+.session-item[data-status="running"] .session-status::before {
+  background: #169f68;
+}
+
+.session-item[data-status="starting"] .session-status::before,
+.session-item[data-status="stopping"] .session-status::before {
+  background: #cf8f00;
+}
+
+.session-item[data-status="degraded"] .session-status::before {
+  background: #ca6d20;
+}
+
+.session-item[data-status="failed"] .session-status::before,
+.session-item[data-status="disconnected"] .session-status::before {
+  background: #bd3844;
+}
+
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.session-actions button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgb(27 43 67 / 14%);
+  border-radius: 7px;
+  color: #263d59;
+  background: rgb(255 255 255 / 62%);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.session-actions button:not(:disabled):hover,
+.session-actions button:not(:disabled):focus-visible {
+  border-color: rgb(27 43 67 / 24%);
+  background: #fff;
+  outline: none;
+}
+
+.session-actions button:disabled {
+  opacity: 0.48;
+}
+
 @media (max-width: 540px) {
   .desktop {
     padding-right: 16px;
@@ -483,6 +677,21 @@ button.toolbar-icon:disabled {
   .entry-details-list > div {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+
+  .session-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 12px;
+  }
+
+  .session-state {
+    grid-column: 1;
+  }
+
+  .session-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    max-width: 150px;
   }
 }
 

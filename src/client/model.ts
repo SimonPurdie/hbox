@@ -9,7 +9,7 @@ export const TAG_ICON_PRIORITY = [
 ] as const;
 
 export type TagIcon = (typeof TAG_ICON_PRIORITY)[number];
-export type ActionName = "folder" | "terminal";
+export type ActionName = string;
 export type MetadataStatus =
   | "loaded"
   | "not_found"
@@ -22,9 +22,15 @@ export interface ClientEntry {
   name: string;
   tags: string[];
   defaultAction: ActionName | null;
+  actions: EntryActionPresentation[];
   available: boolean;
   hasCustomIcon: boolean;
   pinnedPosition: number | null;
+}
+
+export interface EntryActionPresentation {
+  id: string;
+  label: string;
 }
 
 export type IconSource =
@@ -39,6 +45,32 @@ export interface EntryDetails extends ClientEntry {
   location: string;
   metadataStatus: MetadataStatus;
   iconSource: IconSource;
+}
+
+export type SessionStatus =
+  | "starting"
+  | "running"
+  | "degraded"
+  | "stopping"
+  | "failed"
+  | "disconnected";
+
+export interface ClientSession {
+  id: string;
+  entryId: string;
+  entryName: string;
+  definitionId: string;
+  name: string;
+  status: SessionStatus;
+  startedAt: string;
+  readyAt: string | null;
+  url: string | null;
+  message: string | null;
+  canOpen: boolean;
+  canStop: boolean;
+  canRestart: boolean;
+  canForget: boolean;
+  canRecheck: boolean;
 }
 
 export function tagIconFor(entry: ClientEntry): TagIcon | null {

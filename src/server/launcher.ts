@@ -1,15 +1,23 @@
 import { spawn } from "node:child_process";
 import { locationAccessPath } from "./paths.js";
-import type { ActionName, EntryLocation } from "./types.js";
+import type { BuiltInActionName, EntryLocation } from "./types.js";
 
 export interface ActionLauncher {
-  launch(action: ActionName, location: EntryLocation): Promise<void>;
+  launch(action: BuiltInActionName, location: EntryLocation): Promise<void>;
+  openUrl(url: string): Promise<void>;
 }
 
 export class WindowsActionLauncher implements ActionLauncher {
-  async launch(action: ActionName, location: EntryLocation): Promise<void> {
+  async launch(
+    action: BuiltInActionName,
+    location: EntryLocation,
+  ): Promise<void> {
     const launch = actionCommand(action, location);
     await launchDetached(launch.command, launch.args);
+  }
+
+  async openUrl(url: string): Promise<void> {
+    await launchDetached("explorer.exe", [url]);
   }
 }
 
@@ -19,7 +27,7 @@ export interface LaunchCommand {
 }
 
 export function actionCommand(
-  action: ActionName,
+  action: BuiltInActionName,
   location: EntryLocation,
 ): LaunchCommand {
   if (action === "folder") {

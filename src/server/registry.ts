@@ -10,7 +10,6 @@ import {
 } from "node:fs/promises";
 import {
   REGISTRY_VERSION,
-  type ActionName,
   type EntryLocation,
   type EntryPresentation,
   type RegistryData,
@@ -186,7 +185,13 @@ function normalizeRegistryData(value: unknown): RegistryData | null {
     return null;
   }
 
-  const entries = value.entries as StoredEntry[];
+  const entries = (value.entries as StoredEntry[]).map((entry) => ({
+    ...entry,
+    lastKnown: {
+      ...entry.lastKnown,
+      actions: entry.lastKnown.actions ?? [],
+    },
+  }));
   const entryIds = new Set(entries.map((entry) => entry.id));
   const pinnedEntryIds = [
     ...new Set(
@@ -240,12 +245,23 @@ function isPresentation(value: unknown): value is EntryPresentation {
     Array.isArray(value.tags) &&
     value.tags.every((tag) => typeof tag === "string") &&
     isNullableAction(value.defaultAction) &&
+    (value.actions === undefined ||
+      (Array.isArray(value.actions) &&
+        value.actions.every(isEntryActionPresentation))) &&
     typeof value.hasCustomIcon === "boolean"
   );
 }
 
-function isNullableAction(value: unknown): value is ActionName | null {
-  return value === null || value === "folder" || value === "terminal";
+function isNullableAction(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isEntryActionPresentation(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.label === "string"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
