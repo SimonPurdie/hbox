@@ -174,12 +174,13 @@ body.sessions-open .desktop {
   display: -webkit-box;
   align-self: start;
   width: 114px;
-  max-height: 34px;
+  max-height: 39px;
   margin-top: 4px;
+  padding-bottom: 5px;
   overflow: hidden;
   font-size: 13px;
   font-weight: 520;
-  line-height: 16px;
+  line-height: 17px;
   text-align: center;
   text-overflow: ellipsis;
   color: var(--interface-foreground);
