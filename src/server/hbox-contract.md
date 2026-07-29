@@ -44,6 +44,7 @@ runtime, but the integration helper requires this file.
       "type": "process",
       "label": "Development server",
       "command": ["npm", "run", "dev"],
+      "stopCommand": ["npm", "run", "stop"],
       "readyUrl": "http://127.0.0.1:5173",
       "openUrl": "http://127.0.0.1:5173",
       "singleInstance": true
@@ -95,23 +96,33 @@ HBOX omits an action when any requirement fails.
 
 ## Process Sessions
 
-Process Sessions are available only for WSL Entries. `sessions` must be an
-object. Each key is a Session definition ID.
+Process Sessions are available for Windows and WSL Entries. `sessions` must
+be an object. Each key is a Session definition ID.
 
 - An ID must match `[a-z0-9][a-z0-9_-]*`.
 - `type` must be `process`.
 - `label` must be a non-empty string after trim.
 - `command` must be a non-empty array of non-empty strings.
+- `stopCommand` is optional. When present, it must be a non-empty array of
+  non-empty strings.
 - `readyUrl` is optional. When present, it must be an HTTP or HTTPS URL.
 - `openUrl` is optional. When present, it must be an HTTP or HTTPS URL.
 - `singleInstance` defaults to `true`. Only the value `false` disables it.
 
-The command array keeps the executable and each argument separate. Do not put
-the full command in one string. HBOX starts the command from the Entry folder
-through an interactive Bash environment.
+Command arrays keep the executable and each argument separate. Do not put a
+full command in one string. HBOX starts each command from the Entry folder.
+WSL commands use an interactive Bash environment. Windows commands use
+Windows executable search rules. HBOX resolves executable extensions such as
+`.cmd`, so a command can use `npm` instead of `npm.cmd`.
 
 The managed program must stay in the foreground. A program that detaches from
 its process cannot use this Session type.
+
+When `stopCommand` is present, HBOX runs it as a separate, short-lived request
+to stop the managed program. If HBOX cannot start it, HBOX uses the native
+graceful signal. Without `stopCommand`, HBOX sends SIGTERM on WSL or a
+best-effort Ctrl+Break signal on Windows. HBOX force-stops the managed process
+tree when it is still running after the grace period.
 
 When `readyUrl` is present, HBOX waits until the Windows host can reach it.
 HBOX then opens `openUrl` when that URL is present. Without `readyUrl`, HBOX
@@ -120,10 +131,11 @@ treats a verified running process as ready.
 When `singleInstance` is true, a second start does not create a duplicate.
 HBOX opens the existing `openUrl` when the Session is ready.
 
-HBOX keeps Session state across its own restarts. It verifies the WSL boot,
-process start time, process group, and Session token before it stops a process.
-An identity mismatch makes the Session disconnected. HBOX then disables
-destructive actions.
+HBOX keeps Session state across its own restarts. For WSL, it verifies the WSL
+boot, process start time, process group, and Session token. For Windows, a
+native Session runner owns the process tree and verifies the runner, process,
+Job Object, and Session token. An identity mismatch makes the Session
+disconnected. HBOX then disables destructive actions.
 
 ## Custom SVG icons
 

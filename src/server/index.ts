@@ -9,7 +9,9 @@ import { PreferencesStore } from "./preferences.js";
 import { defaultDataDirectory, Registry } from "./registry.js";
 import { rebuildAndReplaceCurrentProcess } from "./restart.js";
 import { SessionManager } from "./session-manager.js";
+import { SessionRuntimeRouter } from "./session-runtime.js";
 import { SessionStore } from "./session-store.js";
+import { WindowsSessionRuntime } from "./windows-session-runtime.js";
 import { WslSessionRuntime } from "./wsl-session-runtime.js";
 import {
   NativeLaunchBroker,
@@ -31,7 +33,10 @@ try {
   const launcher = new WindowsActionLauncher();
   const sessions = new SessionManager(
     new SessionStore(dataDirectory),
-    new WslSessionRuntime(),
+    new SessionRuntimeRouter(
+      new WindowsSessionRuntime(dataDirectory),
+      new WslSessionRuntime(),
+    ),
     launcher,
   );
   await sessions.initialize();

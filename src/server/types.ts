@@ -48,6 +48,7 @@ export interface ProcessSessionDefinition {
   type: "process";
   label: string;
   command: string[];
+  stopCommand: string[] | null;
   readyUrl: string | null;
   openUrl: string | null;
   singleInstance: boolean;

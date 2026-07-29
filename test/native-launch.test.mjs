@@ -66,16 +66,21 @@ test("builds a quoted per-user protocol registration", () => {
 });
 
 test(
-  "builds the Windows protocol launcher as a GUI executable",
+  "builds native launchers as GUI executables",
   { skip: process.platform !== "win32" },
   async () => {
     const { readFile } = await import("node:fs/promises");
-    const executable = await readFile(
-      new URL("../dist/server/protocol-launcher.exe", import.meta.url),
-    );
-    const peOffset = executable.readUInt32LE(0x3c);
-    const optionalHeader = peOffset + 24;
-    const subsystemOffset = optionalHeader + 68;
-    assert.equal(executable.readUInt16LE(subsystemOffset), 2);
+    for (const name of [
+      "protocol-launcher.exe",
+      "windows-session-runner.exe",
+    ]) {
+      const executable = await readFile(
+        new URL(`../dist/server/${name}`, import.meta.url),
+      );
+      const peOffset = executable.readUInt32LE(0x3c);
+      const optionalHeader = peOffset + 24;
+      const subsystemOffset = optionalHeader + 68;
+      assert.equal(executable.readUInt16LE(subsystemOffset), 2);
+    }
   },
 );

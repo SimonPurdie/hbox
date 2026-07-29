@@ -81,13 +81,23 @@ try {
       "v4.0.30319",
       "csc.exe",
     );
-    await run(compiler, [
-      "/nologo",
-      "/target:winexe",
-      "/optimize+",
-      "/reference:System.Web.Extensions.dll",
-      `/out:${path.join(buildDirectory, "server", "protocol-launcher.exe")}`,
-      path.resolve("src/server/protocol-launcher.cs"),
+    await Promise.all([
+      run(compiler, [
+        "/nologo",
+        "/target:winexe",
+        "/optimize+",
+        "/reference:System.Web.Extensions.dll",
+        `/out:${path.join(buildDirectory, "server", "protocol-launcher.exe")}`,
+        path.resolve("src/server/protocol-launcher.cs"),
+      ]),
+      run(compiler, [
+        "/nologo",
+        "/target:winexe",
+        "/optimize+",
+        "/reference:System.Web.Extensions.dll",
+        `/out:${path.join(buildDirectory, "server", "windows-session-runner.exe")}`,
+        path.resolve("src/server/windows-session-runner.cs"),
+      ]),
     ]);
   }
   await replaceOutput();

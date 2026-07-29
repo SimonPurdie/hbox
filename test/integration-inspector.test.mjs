@@ -23,6 +23,7 @@ test("inspects effective metadata and validates a custom icon", async (t) => {
           type: "process",
           label: "Development server",
           command: ["npm", "run", "dev"],
+          stopCommand: ["npm", "run", "stop"],
           readyUrl: "http://127.0.0.1:5173",
           openUrl: "http://127.0.0.1:5173",
         },
@@ -52,6 +53,11 @@ test("inspects effective metadata and validates a custom icon", async (t) => {
     },
   ]);
   assert.equal(result.effective.sessions[0].singleInstance, true);
+  assert.deepEqual(result.effective.sessions[0].stopCommand, [
+    "npm",
+    "run",
+    "stop",
+  ]);
   assert.equal(result.icon.status, "valid");
 });
 

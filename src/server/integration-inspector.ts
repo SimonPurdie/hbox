@@ -81,6 +81,9 @@ export async function inspectIntegration(
       sessions: metadata.sessionDefinitions.map((definition) => ({
         ...definition,
         command: [...definition.command],
+        stopCommand: definition.stopCommand
+          ? [...definition.stopCommand]
+          : null,
       })),
     },
     icon,

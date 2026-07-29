@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -11,6 +11,7 @@ const definition = {
   type: "process",
   label: "Development server",
   command: ["npm", "run", "dev"],
+  stopCommand: null,
   readyUrl: "http://127.0.0.1:5173/",
   openUrl: "http://127.0.0.1:5173/",
   singleInstance: true,
@@ -186,4 +187,60 @@ test("reuses a running single-instance Session instead of starting a duplicate",
     "http://127.0.0.1:5173/",
     "http://127.0.0.1:5173/",
   ]);
+});
+
+test("accepts a Windows Entry through the shared Session lifecycle", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const runtime = new FakeRuntime();
+  const manager = new SessionManager(
+    new SessionStore(root),
+    runtime,
+    { openUrl: async () => {} },
+    { pollIntervalMs: 0, probeUrl: async () => true },
+  );
+  await manager.initialize();
+
+  const started = await manager.startSession(
+    {
+      ...entry,
+      location: { kind: "windows", path: String.raw`E:\Project` },
+    },
+    definition,
+  );
+  assert.equal(started.status, "starting");
+  assert.deepEqual(runtime.starts, [started.id]);
+});
+
+test("migrates version 1 WSL Session records", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { stopCommand: _stopCommand, ...legacyDefinition } = definition;
+  await writeFile(
+    path.join(root, "sessions.json"),
+    JSON.stringify({
+      version: 1,
+      sessions: [
+        {
+          id: "88e1ff42-e6da-4b7c-a7f5-28583a25c7e0",
+          entryId: entry.id,
+          entryName: entry.lastKnown.name,
+          definitionId: definition.id,
+          definition: legacyDefinition,
+          location: entry.location,
+          status: "running",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          readyAt: "2026-01-01T00:00:01.000Z",
+          message: null,
+          openPending: false,
+          stopRequestedAt: null,
+          restartPending: false,
+        },
+      ],
+    }),
+  );
+
+  const [migrated] = await new SessionStore(root).load();
+  assert.equal(migrated.definition.stopCommand, null);
+  assert.equal(migrated.location.kind, "wsl");
 });

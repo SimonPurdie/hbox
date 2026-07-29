@@ -212,7 +212,12 @@ function parseSessionDefinitions(
 
     const readyUrl = parseOptionalUrl(candidate.readyUrl);
     const openUrl = parseOptionalUrl(candidate.openUrl);
-    if (readyUrl === undefined || openUrl === undefined) {
+    const stopCommand = parseOptionalCommand(candidate.stopCommand);
+    if (
+      readyUrl === undefined ||
+      openUrl === undefined ||
+      stopCommand === undefined
+    ) {
       continue;
     }
 
@@ -221,6 +226,7 @@ function parseSessionDefinitions(
       type: "process",
       label: candidate.label.trim(),
       command: [...candidate.command],
+      stopCommand,
       readyUrl,
       openUrl,
       singleInstance: candidate.singleInstance !== false,
@@ -272,6 +278,13 @@ function isCommand(value: unknown): value is string[] {
       (part) => typeof part === "string" && part.length > 0,
     )
   );
+}
+
+function parseOptionalCommand(value: unknown): string[] | null | undefined {
+  if (value === undefined) {
+    return null;
+  }
+  return isCommand(value) ? [...value] : undefined;
 }
 
 function parseOptionalUrl(value: unknown): string | null | undefined {

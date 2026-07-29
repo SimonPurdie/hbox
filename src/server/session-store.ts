@@ -2,12 +2,12 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import type {
+  EntryLocation,
   ProcessSessionDefinition,
   SessionStatus,
-  WslLocation,
 } from "./types.js";
 
-export const SESSION_STORE_VERSION = 1 as const;
+export const SESSION_STORE_VERSION = 2 as const;
 
 export interface StoredSession {
   id: string;
@@ -15,7 +15,7 @@ export interface StoredSession {
   entryName: string;
   definitionId: string;
   definition: ProcessSessionDefinition;
-  location: WslLocation;
+  location: EntryLocation;
   status: SessionStatus;
   startedAt: string;
   readyAt: string | null;
@@ -28,6 +28,11 @@ export interface StoredSession {
 interface SessionStoreData {
   version: typeof SESSION_STORE_VERSION;
   sessions: StoredSession[];
+}
+
+interface LegacySessionStoreData {
+  version: 1;
+  sessions: unknown[];
 }
 
 export class SessionStore {
@@ -56,6 +61,9 @@ export class SessionStore {
         `HBOX Session store is not valid JSON: ${this.sessionsPath}`,
         { cause: error },
       );
+    }
+    if (isLegacySessionStoreData(value)) {
+      return value.sessions.map(migrateLegacySession);
     }
     if (!isSessionStoreData(value)) {
       throw new Error(
@@ -98,7 +106,7 @@ function isStoredSession(value: unknown): value is StoredSession {
     typeof value.entryName === "string" &&
     typeof value.definitionId === "string" &&
     isProcessSessionDefinition(value.definition) &&
-    isWslLocation(value.location) &&
+    isEntryLocation(value.location) &&
     isSessionStatus(value.status) &&
     isDateString(value.startedAt) &&
     isNullableDateString(value.readyAt) &&
@@ -122,13 +130,34 @@ function isProcessSessionDefinition(
     value.command.every(
       (part) => typeof part === "string" && part.length > 0,
     ) &&
+    isNullableCommand(value.stopCommand) &&
     isNullableString(value.readyUrl) &&
     isNullableString(value.openUrl) &&
     typeof value.singleInstance === "boolean"
   );
 }
 
-function isWslLocation(value: unknown): value is WslLocation {
+function isEntryLocation(value: unknown): value is EntryLocation {
+  return (
+    isRecord(value) &&
+    (
+      (
+        value.kind === "windows" &&
+        typeof value.path === "string" &&
+        path.win32.isAbsolute(value.path)
+      ) ||
+      (
+        value.kind === "wsl" &&
+        typeof value.distribution === "string" &&
+        value.distribution.length > 0 &&
+        typeof value.path === "string" &&
+        value.path.startsWith("/")
+      )
+    )
+  );
+}
+
+function isLegacyWslLocation(value: unknown): boolean {
   return (
     isRecord(value) &&
     value.kind === "wsl" &&
@@ -137,6 +166,92 @@ function isWslLocation(value: unknown): value is WslLocation {
     typeof value.path === "string" &&
     value.path.startsWith("/")
   );
+}
+
+function isNullableCommand(value: unknown): boolean {
+  return value === null || isCommand(value);
+}
+
+function isCommand(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((part) => typeof part === "string" && part.length > 0)
+  );
+}
+
+function isLegacySessionStoreData(
+  value: unknown,
+): value is LegacySessionStoreData {
+  return (
+    isRecord(value) &&
+    value.version === 1 &&
+    Array.isArray(value.sessions) &&
+    value.sessions.every(isLegacyStoredSession)
+  );
+}
+
+function isLegacyStoredSession(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isUuid(value.id) &&
+    typeof value.entryId === "string" &&
+    typeof value.entryName === "string" &&
+    typeof value.definitionId === "string" &&
+    isRecord(value.definition) &&
+    typeof value.definition.id === "string" &&
+    value.definition.type === "process" &&
+    typeof value.definition.label === "string" &&
+    isCommand(value.definition.command) &&
+    isNullableString(value.definition.readyUrl) &&
+    isNullableString(value.definition.openUrl) &&
+    typeof value.definition.singleInstance === "boolean" &&
+    isLegacyWslLocation(value.location) &&
+    isSessionStatus(value.status) &&
+    isDateString(value.startedAt) &&
+    isNullableDateString(value.readyAt) &&
+    isNullableString(value.message) &&
+    typeof value.openPending === "boolean" &&
+    isNullableDateString(value.stopRequestedAt) &&
+    typeof value.restartPending === "boolean"
+  );
+}
+
+function migrateLegacySession(value: unknown): StoredSession {
+  const session = value as {
+    id: string;
+    entryId: string;
+    entryName: string;
+    definitionId: string;
+    definition: Omit<ProcessSessionDefinition, "stopCommand">;
+    location: EntryLocation;
+    status: SessionStatus;
+    startedAt: string;
+    readyAt: string | null;
+    message: string | null;
+    openPending: boolean;
+    stopRequestedAt: string | null;
+    restartPending: boolean;
+  };
+  return {
+    id: session.id,
+    entryId: session.entryId,
+    entryName: session.entryName,
+    definitionId: session.definitionId,
+    definition: {
+      ...session.definition,
+      command: [...session.definition.command],
+      stopCommand: null,
+    },
+    location: { ...session.location },
+    status: session.status,
+    startedAt: session.startedAt,
+    readyAt: session.readyAt,
+    message: session.message,
+    openPending: session.openPending,
+    stopRequestedAt: session.stopRequestedAt,
+    restartPending: session.restartPending,
+  };
 }
 
 function isSessionStatus(value: unknown): value is SessionStatus {

@@ -7,14 +7,14 @@ import {
 } from "./session-store.js";
 import type {
   ClientSession,
+  EntryLocation,
   ProcessSessionDefinition,
   StoredEntry,
-  WslLocation,
 } from "./types.js";
 import type {
   RuntimeInspection,
   SessionRuntime,
-} from "./wsl-session-runtime.js";
+} from "./session-runtime.js";
 
 const RUNNER_START_GRACE_MS = 10_000;
 const READINESS_START_GRACE_MS = 60_000;
@@ -89,12 +89,6 @@ export class SessionManager {
     definition: ProcessSessionDefinition,
   ): Promise<ClientSession> {
     return await this.exclusive(async () => {
-      if (entry.location.kind !== "wsl") {
-        throw new SessionActionUnavailableError(
-          "Process Sessions currently require a WSL Entry.",
-        );
-      }
-
       if (definition.singleInstance) {
         const existing = this.sessions.find(
           (session) =>
@@ -411,7 +405,7 @@ export class SessionManager {
   private async createSession(
     entryId: string,
     entryName: string,
-    location: WslLocation,
+    location: EntryLocation,
     definition: ProcessSessionDefinition,
     save: boolean = true,
   ): Promise<StoredSession> {
