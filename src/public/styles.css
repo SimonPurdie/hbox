@@ -336,34 +336,34 @@ button.toolbar-icon:disabled {
 }
 
 .config-color input {
-  width: 76px;
-  height: 24px;
-  padding: 2px 25px 2px 7px;
-  border: 1px solid color-mix(in srgb, var(--interface-foreground) 28%, transparent);
-  border-radius: 6px;
-  color: var(--interface-foreground);
-  background: color-mix(in srgb, var(--interface-foreground) 7%, transparent);
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
   cursor: pointer;
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
 }
 
-.config-color input:focus-visible {
+.config-color input:focus-visible + button {
   outline: 2px solid color-mix(in srgb, var(--interface-foreground) 75%, transparent);
   outline-offset: 2px;
 }
 
 .config-color .clr-field {
   display: block;
-  width: 76px;
+  width: 24px;
+  height: 24px;
 }
 
 .config-color .clr-field button {
-  width: 20px;
-  height: 20px;
-  right: 2px;
+  width: 24px;
+  height: 24px;
+  right: 0;
   padding: 0;
-  border-radius: 4px;
+  border-radius: 6px;
   background-color: transparent;
 }
 
