@@ -73,7 +73,7 @@ body {
 .entry {
   position: relative;
   display: grid;
-  grid-template-rows: 78px 34px;
+  grid-template-rows: 72px 40px;
   align-content: center;
   justify-items: center;
   width: 128px;
@@ -137,23 +137,18 @@ body {
 
 .entry-icon {
   position: absolute;
-  right: -3px;
-  bottom: 0;
+  left: 28px;
+  bottom: 16px;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 2px solid rgb(255 255 255 / 80%);
-  border-radius: 9px;
-  color: #fff;
-  background: #263b61;
-  box-shadow: 0 3px 8px rgb(13 32 62 / 25%);
+  width: 24px;
+  height: 24px;
   overflow: hidden;
 }
 
 .entry-icon img {
-  width: 21px;
-  height: 21px;
+  width: 24px;
+  height: 24px;
 }
 
 .entry-icon.custom-icon img {
