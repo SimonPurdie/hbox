@@ -50,6 +50,32 @@ test("serves Entries and protects mutation endpoints by origin", async (t) => {
   assert.deepEqual(calls, [{ id: "abc", action: "folder" }]);
 });
 
+test("serves the current HBOX integration contract", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+  const service = {
+    listEntries: async () => [],
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const server = createHttpServer(service, staticDirectory, () => {});
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const response = await fetch(
+    `http://127.0.0.1:${address.port}/api/integration/contract`,
+  );
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type"),
+    /^text\/markdown; charset=utf-8$/,
+  );
+  const contract = await response.text();
+  assert.match(contract, /^# HBOX project contract/m);
+  assert.match(contract, /^## Custom SVG icons/m);
+});
+
 test("serves opaque native launch tickets only to the protocol helper", async (t) => {
   const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
   t.after(() => rm(staticDirectory, { recursive: true, force: true }));

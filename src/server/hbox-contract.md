@@ -16,8 +16,8 @@ A project can contain these portable files:
 
 ```text
 .hbox/
-├── entry.json
-└── icon.svg
+|-- entry.json
+`-- icon.svg
 ```
 
 `entry.json` defines the Entry. `icon.svg` is optional. HBOX keeps

@@ -9,11 +9,16 @@ Make the project useful in HBOX with the smallest meaningful configuration.
 
 ## Workflow
 
-1. Inspect the project README, package scripts, and main entry points. Identify
+1. Fetch the current contract from the running HBOX instance. Read the complete
+   output before you inspect or edit project files:
+
+   ```powershell
+   pwsh -NoLogo -NoProfile -File <skill-folder>\scripts\integrate-project.ps1 -ShowContract
+   ```
+
+   Treat this output as the source of truth. Do not rely on a copied contract.
+2. Inspect the project README, package scripts, and main entry points. Identify
    the project purpose and the actions that a user will need.
-2. Read [references/hbox-contract.md](references/hbox-contract.md). Read the
-   Session section only when the project needs a managed WSL process. Read the
-   SVG section only when the project needs a custom icon.
 3. Inspect an existing `.hbox` folder before you edit it. Preserve intentional
    fields and project-specific behavior.
 4. Create or update `.hbox/entry.json`.

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFile, stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import {
   createServer,
   type IncomingMessage,
@@ -40,6 +41,9 @@ const SESSION_ACTION_PATTERN =
 const SESSION_PATTERN = /^\/api\/sessions\/([^/]+)$/;
 const NATIVE_LAUNCH_PATTERN = /^\/api\/native-launch\/([^/]+)$/;
 const MAX_JSON_BODY_BYTES = 64 * 1024;
+const INTEGRATION_CONTRACT_PATH = fileURLToPath(
+  new URL("./hbox-contract.md", import.meta.url),
+);
 
 class InvalidRequestError extends Error {}
 
@@ -99,6 +103,14 @@ export function createHttpServer(
           return;
         }
         sendJson(response, 200, await preferences.load());
+        return;
+      }
+
+      if (
+        request.method === "GET" &&
+        url.pathname === "/api/integration/contract"
+      ) {
+        sendMarkdown(response, await readFile(INTEGRATION_CONTRACT_PATH));
         return;
       }
 
@@ -485,6 +497,15 @@ function sendJson(
   const body = Buffer.from(JSON.stringify(value));
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
+    "Content-Length": body.byteLength,
+    "Cache-Control": "no-store",
+  });
+  response.end(body);
+}
+
+function sendMarkdown(response: ServerResponse, body: Buffer): void {
+  response.writeHead(200, {
+    "Content-Type": "text/markdown; charset=utf-8",
     "Content-Length": body.byteLength,
     "Cache-Control": "no-store",
   });

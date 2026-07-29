@@ -68,6 +68,10 @@ try {
     "src/server/session-launcher.vbs",
     path.join(buildDirectory, "server", "session-launcher.vbs"),
   );
+  await cp(
+    "src/server/hbox-contract.md",
+    path.join(buildDirectory, "server", "hbox-contract.md"),
+  );
   if (process.platform === "win32") {
     const windowsDirectory = process.env.WINDIR ?? String.raw`C:\Windows`;
     const compiler = path.join(

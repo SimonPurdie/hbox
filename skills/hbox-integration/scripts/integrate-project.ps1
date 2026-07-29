@@ -1,9 +1,13 @@
 [CmdletBinding()]
 param(
-  [Parameter(Position = 0)]
+  [Parameter(ParameterSetName = 'Project', Position = 0)]
   [string]$Path = '.',
 
+  [Parameter(ParameterSetName = 'Project')]
   [switch]$VerifyOnly,
+
+  [Parameter(Mandatory, ParameterSetName = 'Contract')]
+  [switch]$ShowContract,
 
   [uri]$ServerUri = 'http://127.0.0.1:4269'
 )
@@ -11,6 +15,22 @@ param(
 if ($PSVersionTable.PSVersion.Major -lt 7) {
   [Console]::Error.WriteLine('This helper requires PowerShell 7 or newer.')
   exit 2
+}
+
+$baseUri = $ServerUri.GetLeftPart([System.UriPartial]::Authority)
+if ($ShowContract) {
+  try {
+    $response = Invoke-WebRequest -Uri (
+      '{0}/api/integration/contract' -f $baseUri
+    ) -ErrorAction Stop
+    [Console]::Out.Write($response.Content)
+    exit 0
+  } catch {
+    [Console]::Error.WriteLine(
+      ('Could not read the HBOX contract: {0}' -f $_.Exception.Message)
+    )
+    exit 2
+  }
 }
 
 try {
@@ -26,7 +46,6 @@ try {
   exit 2
 }
 
-$baseUri = $ServerUri.GetLeftPart([System.UriPartial]::Authority)
 $headers = @{ Origin = $baseUri }
 $body = @{ path = $projectPath } | ConvertTo-Json -Compress
 $request = @{
