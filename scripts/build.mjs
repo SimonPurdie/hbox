@@ -46,6 +46,10 @@ try {
       path.join(buildDirectory, "public", "assets"),
     ]),
   ]);
+  await cp(
+    "src/server/session-launcher.vbs",
+    path.join(buildDirectory, "server", "session-launcher.vbs"),
+  );
   await replaceOutput();
 } catch (error) {
   await rm(buildDirectory, { recursive: true, force: true });

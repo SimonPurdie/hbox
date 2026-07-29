@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { StoredSession } from "./session-store.js";
+
+const SESSION_LAUNCHER_PATH = fileURLToPath(
+  new URL("./session-launcher.vbs", import.meta.url),
+);
 
 const RUNNER_SCRIPT = String.raw`
 umask 077
@@ -163,7 +169,7 @@ export interface SessionRuntime {
 
 export class WslSessionRuntime implements SessionRuntime {
   async start(session: StoredSession): Promise<void> {
-    await spawnDetached("wsl.exe", [
+    await launchHiddenWindowsProcess("wsl.exe", [
       "--distribution",
       session.location.distribution,
       "--cd",
@@ -268,22 +274,70 @@ export class WslSessionRuntime implements SessionRuntime {
   }
 }
 
-async function spawnDetached(
+async function launchHiddenWindowsProcess(
   command: string,
   args: string[],
 ): Promise<void> {
+  const systemRoot = process.env.SystemRoot ?? String.raw`C:\Windows`;
+  const wscriptPath = path.win32.join(
+    systemRoot,
+    "System32",
+    "wscript.exe",
+  );
+  const commandPath =
+    command.toLocaleLowerCase("en-US") === "wsl.exe"
+      ? path.win32.join(systemRoot, "System32", "wsl.exe")
+      : command;
+  const commandLine = windowsCommandLine(commandPath, args);
+  const encodedCommandLine = encodeUtf16Hex(commandLine);
+
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      detached: true,
+    const child = spawn(
+      wscriptPath,
+      ["//B", "//NoLogo", SESSION_LAUNCHER_PATH, encodedCommandLine],
+      {
       stdio: "ignore",
       windowsHide: true,
-    });
+      },
+    );
     child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `The hidden Session launcher exited with code ${code ?? "unknown"}.`,
+          ),
+        );
+      }
     });
   });
+}
+
+function encodeUtf16Hex(value: string): string {
+  let encoded = "";
+  for (let index = 0; index < value.length; index += 1) {
+    encoded += value.charCodeAt(index).toString(16).padStart(4, "0");
+  }
+  return encoded;
+}
+
+export function windowsCommandLine(
+  command: string,
+  args: readonly string[],
+): string {
+  return [command, ...args].map(quoteWindowsArgument).join(" ");
+}
+
+function quoteWindowsArgument(value: string): string {
+  if (value.length > 0 && !/[\s"]/.test(value)) {
+    return value;
+  }
+  const escaped = value
+    .replace(/(\\*)"/g, '$1$1\\"')
+    .replace(/(\\+)$/g, "$1$1");
+  return `"${escaped}"`;
 }
 
 async function runCaptured(

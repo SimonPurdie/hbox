@@ -7,6 +7,7 @@ import {
   parseSelectedPath,
 } from "../dist/server/paths.js";
 import { actionCommand } from "../dist/server/launcher.js";
+import { windowsCommandLine } from "../dist/server/wsl-session-runtime.js";
 
 test("normalizes WSL UNC aliases into a canonical location", () => {
   const localhost = parseSelectedPath(
@@ -75,4 +76,17 @@ test("constructs Explorer and terminal launches without shell strings", () => {
       "/home/simon/a folder",
     ],
   });
+});
+
+test("quotes hidden Windows launcher arguments without shell parsing", () => {
+  assert.equal(
+    windowsCommandLine(String.raw`C:\Windows\System32\wsl.exe`, [
+      "--cd",
+      String.raw`/home/simon/A folder`,
+      'say "hello"',
+      "line one\nline two",
+      "C:\\trailing\\",
+    ]),
+    'C:\\Windows\\System32\\wsl.exe --cd "/home/simon/A folder" "say \\"hello\\"" "line one\nline two" C:\\trailing\\',
+  );
 });
