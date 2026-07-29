@@ -61,7 +61,6 @@ body.sessions-open .desktop {
 .entry-section-title {
   margin: 0 0 2px;
   padding: 0 8px;
-  color: color-mix(in srgb, var(--interface-foreground) 72%, transparent);
   font-size: 12px;
   font-weight: 650;
   line-height: 20px;
@@ -119,10 +118,6 @@ body.sessions-open .desktop {
 .entry.unavailable {
   opacity: 0.42;
   filter: saturate(0.42);
-}
-
-.entry[draggable="true"] {
-  cursor: grab;
 }
 
 .entry.dragging {
@@ -228,7 +223,6 @@ body.sessions-open .desktop {
   min-width: 17px;
   height: 17px;
   padding: 0 4px;
-  border: 1px solid color-mix(in srgb, var(--interface-foreground) 65%, transparent);
   border-radius: 9px;
   color: var(--interface-foreground);
   background: var(--interface-color);
@@ -581,8 +575,7 @@ body.sessions-open .search-shell {
   left: 0;
   height: var(--sessions-pane-height);
   color: var(--interface-foreground);
-  background: color-mix(in srgb, var(--interface-color) 94%, transparent);
-  border-top: 1px solid color-mix(in srgb, var(--interface-foreground) 22%, transparent);
+  background: color-mix(in srgb, var(--interface-color) 75%, transparent);
   box-shadow: 0 -14px 34px color-mix(in srgb, var(--interface-shadow-color) 42%, transparent);
   backdrop-filter: blur(20px);
 }
@@ -593,13 +586,15 @@ body.sessions-open .search-shell {
   justify-content: space-between;
   height: 48px;
   padding: 0 17px 0 22px;
-  border-bottom: 1px solid color-mix(in srgb, var(--interface-foreground) 12%, transparent);
 }
 
 .sessions-header h2 {
-  margin: 0;
-  font-size: 15px;
+  margin: 0 0 2px;
+  padding: 0 8px;
+  font-size: 12px;
   font-weight: 650;
+  line-height: 20px;
+  text-shadow: 0 1px 4px var(--interface-shadow-color);
 }
 
 .close-sessions {
@@ -638,7 +633,7 @@ body.sessions-open .search-shell {
   gap: 18px;
   min-height: 58px;
   padding: 8px 9px;
-  border-bottom: 1px solid color-mix(in srgb, var(--interface-foreground) 10%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--interface-foreground) 5%, transparent)
 }
 
 .session-identity,
@@ -656,7 +651,7 @@ body.sessions-open .search-shell {
 
 .session-entry {
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 520;
   line-height: 18px;
 }
 
@@ -664,7 +659,7 @@ body.sessions-open .search-shell {
 .session-message,
 .session-age {
   color: color-mix(in srgb, var(--interface-foreground) 58%, transparent);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 16px;
 }
 
@@ -672,8 +667,8 @@ body.sessions-open .search-shell {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
-  font-weight: 620;
+  font-size: 13px;
+  font-weight: 520;
   line-height: 17px;
 }
 
@@ -713,17 +708,16 @@ body.sessions-open .search-shell {
 .session-actions button {
   min-height: 30px;
   padding: 5px 10px;
-  border: 1px solid color-mix(in srgb, var(--interface-foreground) 18%, transparent);
+  border: 0;
   border-radius: 7px;
   color: var(--interface-foreground);
   background: color-mix(in srgb, var(--interface-foreground) 8%, transparent);
-  font-size: 11px;
-  font-weight: 620;
+  font-size: 13px;
+  font-weight: 520;
 }
 
 .session-actions button:not(:disabled):hover,
 .session-actions button:not(:disabled):focus-visible {
-  border-color: color-mix(in srgb, var(--interface-foreground) 30%, transparent);
   background: color-mix(in srgb, var(--interface-foreground) 16%, transparent);
   outline: none;
 }
