@@ -11,6 +11,8 @@
     "dev": "npm run build && node dist/server/index.js",
     "prestart": "npm run build",
     "start": "node dist/server/index.js",
+    "startup:install": "npm run build && node scripts/windows-startup.mjs install",
+    "startup:uninstall": "node scripts/windows-startup.mjs uninstall",
     "test": "npm run build && node --test"
   },
   "devDependencies": {
