@@ -1,49 +1,65 @@
 ---
 name: hbox-integration
-description: Create, review, repair, verify, and register portable HBOX project integrations. Use when an agent must add or update a project .hbox folder, choose HBOX names or tags, define HBOX actions or WSL process Sessions, prepare a custom SVG icon, check how HBOX interprets project metadata, or register the project with a running local HBOX instance.
+description: Create, review, repair, verify, and register portable HBOX project integrations. Use when an agent works with a project .hbox folder, Entry metadata, tags, actions, Sessions, custom SVG icons, effective HBOX metadata, or local HBOX registration.
 ---
 
 # HBOX integration
 
-Make the project useful in HBOX with the smallest meaningful configuration.
+HBOX represents a project as an Entry tied to one canonical folder. Project
+integration is portable in `.hbox`. Local registration connects that folder to
+the running HBOX instance.
 
-## Workflow
+## Integration surfaces
 
-1. Fetch the current contract from the running HBOX instance. Read the complete
-   output before you inspect or edit project files:
+### Entry metadata
 
-   ```powershell
-   pwsh -NoLogo -NoProfile -File <skill-folder>\scripts\integrate-project.ps1 -ShowContract
-   ```
+`.hbox/entry.json` describes how the Entry appears and behaves. Its main
+concepts are:
 
-   Treat this output as the source of truth. Do not rely on a copied contract.
-2. Inspect the project README, package scripts, and main entry points. Identify
-   the project purpose and the actions that a user will need.
-3. Inspect an existing `.hbox` folder before you edit it. Preserve intentional
-   fields and project-specific behavior.
-4. Create or update `.hbox/entry.json`.
-   - Use the project title for `name`. Replace filename separators with spaces
-     when that matches the title.
-   - Use a small set of purpose-based tags. Do not add `code` only because the
-     project contains code.
-   - Set a default action only when one action is the clear normal entry point.
-   - Add a process Session only when HBOX must own its lifecycle.
-5. Add `.hbox/icon.svg` only when the project has a deliberate custom identity
-   or the user requests one. Prefer a built-in tag icon or the fallback icon in
-   other cases.
-6. Run the bundled helper from the project folder. It verifies the effective
-   metadata and custom icon before it registers the project:
+- A display name identifies the Entry.
+- Tags support search and built-in icon selection.
+- A default action gives the Entry its direct activation behavior.
 
-   ```powershell
-   pwsh -NoLogo -NoProfile -File <skill-folder>\scripts\integrate-project.ps1
-   ```
+### Actions
 
-   Use `-VerifyOnly` when the user does not want local registration. Use
-   `-Path <folder>` when the current folder is not the project folder.
-7. Treat helper issues as failures. Fix the project files and run the helper
-   again. Do not edit the HBOX registry file.
-8. Report the effective name, tags, default action, custom actions, Sessions,
-   icon result, and registration result.
+An Action is a discrete operation that a user can request from an Entry.
+Built-in Actions open the canonical folder or its terminal. Project-defined
+Actions connect the Entry to capabilities described in its metadata.
+
+### Sessions
+
+A Session represents ongoing activity managed through HBOX. It can model a
+process, service, or another unit of work that continues beyond one Action.
+Session definitions describe how HBOX starts or discovers the activity, checks
+its identity and readiness, reconciles saved state, and offers suitable
+lifecycle Actions.
+
+The current contract lists the implemented Session types and their environment
+constraints.
+
+### Icons
+
+`.hbox/icon.svg` gives an Entry a project-specific icon. HBOX can also select a
+built-in icon from the Entry tags or use its fallback icon.
+
+## Live contract and helper
+
+The running HBOX instance supplies the current file formats, accepted values,
+normalization rules, and implementation limits:
+
+```powershell
+pwsh -NoLogo -NoProfile -File <skill-folder>\scripts\integrate-project.ps1 -ShowContract
+```
+
+The same helper applies HBOX's metadata parser and SVG normalizer to a project:
+
+```powershell
+pwsh -NoLogo -NoProfile -File <skill-folder>\scripts\integrate-project.ps1
+```
+
+`-Path <folder>` selects a project folder. `-VerifyOnly` returns the effective
+integration without local registration. A successful default invocation
+registers the Entry after verification.
 
 ## WSL invocation
 
