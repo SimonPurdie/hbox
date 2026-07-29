@@ -82,6 +82,7 @@ export interface ClientEntry {
   available: boolean;
   hasCustomIcon: boolean;
   pinnedPosition: number | null;
+  nativeLaunch?: Record<BuiltInActionName, string>;
 }
 
 export type IconSource =

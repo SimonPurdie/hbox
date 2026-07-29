@@ -11,6 +11,10 @@ import { rebuildAndReplaceCurrentProcess } from "./restart.js";
 import { SessionManager } from "./session-manager.js";
 import { SessionStore } from "./session-store.js";
 import { WslSessionRuntime } from "./wsl-session-runtime.js";
+import {
+  NativeLaunchBroker,
+  registerNativeLaunchProtocol,
+} from "./native-launch.js";
 
 const HOST = "127.0.0.1";
 const PORT = 4269;
@@ -39,6 +43,15 @@ try {
     sessions,
   );
   await service.initialize();
+  const protocolLauncher = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "protocol-launcher.ps1",
+  );
+  const nativeLaunch = (await registerNativeLaunchProtocol(protocolLauncher))
+    ? new NativeLaunchBroker((entryId, action) =>
+        service.resolveBuiltInLaunch(entryId, action),
+      )
+    : undefined;
 
   let restarting = false;
   const server = createHttpServer(
@@ -67,6 +80,7 @@ try {
     INSTANCE_ID,
     sessions,
     preferences,
+    nativeLaunch,
   );
   server.listen(PORT, HOST, () => {
     console.log(`HBOX is ready at http://${HOST}:${PORT}`);

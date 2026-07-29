@@ -17,6 +17,10 @@ import {
 } from "./entry-service.js";
 import { PickerBusyError } from "./picker.js";
 import {
+  NativeLaunchBroker,
+  NativeLaunchTicketNotFoundError,
+} from "./native-launch.js";
+import {
   InvalidPreferencesError,
   type PreferencesStore,
 } from "./preferences.js";
@@ -34,6 +38,7 @@ const ENTRY_PATTERN = /^\/api\/entries\/([^/]+)$/;
 const SESSION_ACTION_PATTERN =
   /^\/api\/sessions\/([^/]+)\/(open|stop|restart|recheck)$/;
 const SESSION_PATTERN = /^\/api\/sessions\/([^/]+)$/;
+const NATIVE_LAUNCH_PATTERN = /^\/api\/native-launch\/([^/]+)$/;
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 class InvalidRequestError extends Error {}
@@ -46,6 +51,7 @@ export function createHttpServer(
   instanceId: string = `${process.pid}`,
   sessions?: SessionManager,
   preferences?: PreferencesStore,
+  nativeLaunch?: NativeLaunchBroker,
 ): Server {
   return createServer(async (request, response) => {
     setSecurityHeaders(response);
@@ -62,7 +68,14 @@ export function createHttpServer(
       );
 
       if (request.method === "GET" && url.pathname === "/api/entries") {
-        sendJson(response, 200, await service.listEntries());
+        const entries = await service.listEntries();
+        sendJson(
+          response,
+          200,
+          nativeLaunch
+            ? entries.map((entry) => nativeLaunch.addLaunchUris(entry))
+            : entries,
+        );
         return;
       }
 
@@ -233,6 +246,20 @@ export function createHttpServer(
       }
 
       if (request.method === "GET") {
+        const nativeLaunchMatch = NATIVE_LAUNCH_PATTERN.exec(url.pathname);
+        if (nativeLaunchMatch) {
+          if (
+            !nativeLaunch ||
+            request.headers["x-hbox-native-launcher"] !== "1"
+          ) {
+            sendJson(response, 403, { error: "native_launch_forbidden" });
+            return;
+          }
+          const ticket = decodeURIComponent(nativeLaunchMatch[1] ?? "");
+          sendJson(response, 200, await nativeLaunch.resolve(ticket));
+          return;
+        }
+
         const iconMatch = ICON_PATTERN.exec(url.pathname);
         if (iconMatch) {
           const entryId = decodeURIComponent(iconMatch[1] ?? "");
@@ -280,6 +307,10 @@ export function createHttpServer(
       }
       if (caught instanceof ActionNotFoundError) {
         sendJson(response, 404, { error: "action_not_found" });
+        return;
+      }
+      if (caught instanceof NativeLaunchTicketNotFoundError) {
+        sendJson(response, 404, { error: "native_launch_not_found" });
         return;
       }
       if (caught instanceof SessionNotFoundError) {

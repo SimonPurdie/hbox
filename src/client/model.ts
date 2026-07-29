@@ -10,6 +10,7 @@ export const TAG_ICON_PRIORITY = [
 
 export type TagIcon = (typeof TAG_ICON_PRIORITY)[number];
 export type ActionName = string;
+export type BuiltInActionName = "folder" | "terminal";
 export type MetadataStatus =
   | "loaded"
   | "not_found"
@@ -26,6 +27,7 @@ export interface ClientEntry {
   available: boolean;
   hasCustomIcon: boolean;
   pinnedPosition: number | null;
+  nativeLaunch?: Record<BuiltInActionName, string>;
 }
 
 export interface EntryActionPresentation {

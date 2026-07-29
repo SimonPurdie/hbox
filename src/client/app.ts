@@ -4,6 +4,7 @@ import {
   matchesEntry,
   tagIconFor,
   type ActionName,
+  type BuiltInActionName,
   type ClientEntry,
   type ClientSession,
   type EntryDetails,
@@ -734,6 +735,11 @@ async function runAction(
     return;
   }
 
+  if (isBuiltInAction(action) && entry.nativeLaunch) {
+    window.location.assign(entry.nativeLaunch[action]);
+    return;
+  }
+
   try {
     const response = await fetch(
       `/api/entries/${encodeURIComponent(entry.id)}/actions/${encodeURIComponent(action)}`,
@@ -746,6 +752,10 @@ async function runAction(
   } catch (error) {
     console.error(error);
   }
+}
+
+function isBuiltInAction(action: string): action is BuiltInActionName {
+  return action === "folder" || action === "terminal";
 }
 
 function setSessionsPaneOpen(open: boolean): void {

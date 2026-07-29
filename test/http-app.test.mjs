@@ -8,6 +8,7 @@ import {
   InvalidPinOrderError,
 } from "../dist/server/entry-service.js";
 import { createHttpServer } from "../dist/server/http-app.js";
+import { NativeLaunchBroker } from "../dist/server/native-launch.js";
 import { PreferencesStore } from "../dist/server/preferences.js";
 
 test("serves Entries and protects mutation endpoints by origin", async (t) => {
@@ -47,6 +48,76 @@ test("serves Entries and protects mutation endpoints by origin", async (t) => {
   });
   assert.equal(accepted.status, 202);
   assert.deepEqual(calls, [{ id: "abc", action: "folder" }]);
+});
+
+test("serves opaque native launch tickets only to the protocol helper", async (t) => {
+  const staticDirectory = await mkdtemp(path.join(os.tmpdir(), "hbox-http-"));
+  t.after(() => rm(staticDirectory, { recursive: true, force: true }));
+
+  const entry = {
+    id: "entry-a",
+    name: "Project",
+    tags: [],
+    defaultAction: null,
+    actions: [],
+    available: true,
+    hasCustomIcon: false,
+    pinnedPosition: null,
+  };
+  const service = {
+    listEntries: async () => [entry],
+    readCachedIcon: async () => Buffer.from(""),
+  };
+  const calls = [];
+  const nativeLaunch = new NativeLaunchBroker(async (entryId, action) => {
+    calls.push({ entryId, action });
+    return {
+      command: "explorer.exe",
+      args: [String.raw`E:\Project`],
+    };
+  });
+  const server = createHttpServer(
+    service,
+    staticDirectory,
+    () => {},
+    undefined,
+    "test-instance",
+    undefined,
+    undefined,
+    nativeLaunch,
+  );
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const entriesResponse = await fetch(`${baseUrl}/api/entries`);
+  const entries = await entriesResponse.json();
+  const launchUri = new URL(entries[0].nativeLaunch.folder);
+  const ticket = launchUri.pathname.slice(1);
+  const launchUrl = `${baseUrl}/api/native-launch/${ticket}`;
+
+  assert.equal((await fetch(launchUrl)).status, 403);
+  const resolved = await fetch(launchUrl, {
+    headers: { "X-HBOX-Native-Launcher": "1" },
+  });
+  assert.equal(resolved.status, 200);
+  assert.deepEqual(await resolved.json(), {
+    command: "explorer.exe",
+    args: [String.raw`E:\Project`],
+  });
+  assert.deepEqual(calls, [{ entryId: "entry-a", action: "folder" }]);
+
+  assert.equal(
+    (
+      await fetch(
+        `${baseUrl}/api/native-launch/00000000-0000-0000-0000-000000000000`,
+        { headers: { "X-HBOX-Native-Launcher": "1" } },
+      )
+    ).status,
+    404,
+  );
 });
 
 test("inspects and registers explicit Entry paths through protected endpoints", async (t) => {

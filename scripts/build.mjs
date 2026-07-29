@@ -67,6 +67,10 @@ try {
     "src/server/session-launcher.vbs",
     path.join(buildDirectory, "server", "session-launcher.vbs"),
   );
+  await cp(
+    "src/server/protocol-launcher.ps1",
+    path.join(buildDirectory, "server", "protocol-launcher.ps1"),
+  );
   await replaceOutput();
 } catch (error) {
   await rm(buildDirectory, { recursive: true, force: true });

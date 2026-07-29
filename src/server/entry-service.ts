@@ -18,7 +18,11 @@ import {
   MAX_ICON_BYTES,
   normalizeEntryIcon,
 } from "./svg-normalizer.js";
-import type { ActionLauncher } from "./launcher.js";
+import {
+  actionCommand,
+  type ActionLauncher,
+  type LaunchCommand,
+} from "./launcher.js";
 import type { FolderPicker } from "./picker.js";
 import type { SessionManager } from "./session-manager.js";
 import {
@@ -200,6 +204,21 @@ export class EntryService {
       throw new ActionNotFoundError(action);
     }
     await this.sessionManager.startSession(entry, sessionDefinition);
+  }
+
+  async resolveBuiltInLaunch(
+    entryId: string,
+    action: BuiltInActionName,
+  ): Promise<LaunchCommand> {
+    const data = await this.registry.load();
+    const entry = data.entries.find((candidate) => candidate.id === entryId);
+    if (!entry) {
+      throw new EntryNotFoundError(entryId);
+    }
+    if (!(await isFolderAvailable(entry.location))) {
+      throw new EntryUnavailableError(entryId);
+    }
+    return actionCommand(action, entry.location);
   }
 
   async getEntryDetails(entryId: string): Promise<EntryDetails> {
