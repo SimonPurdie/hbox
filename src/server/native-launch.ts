@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
-import path from "node:path";
 import { spawn } from "node:child_process";
 import type { LaunchCommand } from "./launcher.js";
 import type {
@@ -62,23 +61,16 @@ export class NativeLaunchBroker {
 }
 
 export async function registerNativeLaunchProtocol(
-  launcherScript: string,
+  launcherExecutable: string,
   warn: (message: string) => void = console.warn,
 ): Promise<boolean> {
   if (process.platform !== "win32") {
     return false;
   }
 
-  const pwshPath = path.win32.join(
-    process.env.ProgramFiles ?? String.raw`C:\Program Files`,
-    "PowerShell",
-    "7",
-    "pwsh.exe",
-  );
   try {
-    await access(pwshPath);
-    await access(launcherScript);
-    for (const args of protocolRegistryArguments(pwshPath, launcherScript)) {
+    await access(launcherExecutable);
+    for (const args of protocolRegistryArguments(launcherExecutable)) {
       await runRegistryCommand(args);
     }
     return true;
@@ -91,22 +83,10 @@ export async function registerNativeLaunchProtocol(
 }
 
 export function protocolRegistryArguments(
-  pwshPath: string,
-  launcherScript: string,
+  launcherExecutable: string,
 ): string[][] {
-  const command = [
-    quoteWindowsArgument(pwshPath),
-    "-NoLogo",
-    "-NoProfile",
-    "-NonInteractive",
-    "-WindowStyle",
-    "Hidden",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    quoteWindowsArgument(launcherScript),
-    '"%1"',
-  ].join(" ");
+  const command =
+    `${quoteWindowsArgument(launcherExecutable)} "%1"`;
 
   return [
     ["add", PROTOCOL_KEY, "/ve", "/d", "URL:HBOX Launch Protocol", "/f"],

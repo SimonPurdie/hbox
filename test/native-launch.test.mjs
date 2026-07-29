@@ -47,8 +47,7 @@ test("issues stable opaque launch URIs and resolves their commands", async () =>
 
 test("builds a quoted per-user protocol registration", () => {
   const commands = protocolRegistryArguments(
-    String.raw`C:\Program Files\PowerShell\7\pwsh.exe`,
-    String.raw`E:\HBOX Folder\protocol-launcher.ps1`,
+    String.raw`E:\HBOX Folder\protocol-launcher.exe`,
   );
 
   assert.equal(commands.length, 3);
@@ -62,6 +61,21 @@ test("builds a quoted per-user protocol registration", () => {
   ]);
   assert.equal(
     commands[2][4],
-    '"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "E:\\HBOX Folder\\protocol-launcher.ps1" "%1"',
+    '"E:\\HBOX Folder\\protocol-launcher.exe" "%1"',
   );
 });
+
+test(
+  "builds the Windows protocol launcher as a GUI executable",
+  { skip: process.platform !== "win32" },
+  async () => {
+    const { readFile } = await import("node:fs/promises");
+    const executable = await readFile(
+      new URL("../dist/server/protocol-launcher.exe", import.meta.url),
+    );
+    const peOffset = executable.readUInt32LE(0x3c);
+    const optionalHeader = peOffset + 24;
+    const subsystemOffset = optionalHeader + 68;
+    assert.equal(executable.readUInt16LE(subsystemOffset), 2);
+  },
+);

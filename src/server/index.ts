@@ -45,7 +45,7 @@ try {
   await service.initialize();
   const protocolLauncher = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    "protocol-launcher.ps1",
+    "protocol-launcher.exe",
   );
   const nativeLaunch = (await registerNativeLaunchProtocol(protocolLauncher))
     ? new NativeLaunchBroker((entryId, action) =>

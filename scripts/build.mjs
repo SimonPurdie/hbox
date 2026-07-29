@@ -11,6 +11,7 @@ async function run(command, args) {
   await new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: "inherit",
+      windowsHide: true,
     });
 
     child.once("error", reject);
@@ -67,10 +68,24 @@ try {
     "src/server/session-launcher.vbs",
     path.join(buildDirectory, "server", "session-launcher.vbs"),
   );
-  await cp(
-    "src/server/protocol-launcher.ps1",
-    path.join(buildDirectory, "server", "protocol-launcher.ps1"),
-  );
+  if (process.platform === "win32") {
+    const windowsDirectory = process.env.WINDIR ?? String.raw`C:\Windows`;
+    const compiler = path.join(
+      windowsDirectory,
+      "Microsoft.NET",
+      "Framework64",
+      "v4.0.30319",
+      "csc.exe",
+    );
+    await run(compiler, [
+      "/nologo",
+      "/target:winexe",
+      "/optimize+",
+      "/reference:System.Web.Extensions.dll",
+      `/out:${path.join(buildDirectory, "server", "protocol-launcher.exe")}`,
+      path.resolve("src/server/protocol-launcher.cs"),
+    ]);
+  }
   await replaceOutput();
 } catch (error) {
   await rm(buildDirectory, { recursive: true, force: true });
