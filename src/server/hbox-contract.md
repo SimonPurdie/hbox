@@ -58,7 +58,8 @@ runtime, but the integration helper requires this file.
 - `tags` must be an array. HBOX keeps string items, trims them, converts them
   to lowercase, removes empty values, and removes duplicates.
 - `defaultAction` can be `folder`, `terminal`, or an accepted custom action ID.
-  HBOX uses no default action when the value is invalid.
+  HBOX uses no default action when the value is invalid. An Entry with an
+  accepted default action uses the active green folder and icon treatment.
 - Unknown fields have no effect.
 
 ## Tags and icons

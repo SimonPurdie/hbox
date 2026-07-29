@@ -130,6 +130,9 @@ body.sessions-open .desktop {
 }
 
 .folder {
+  --folder-rear-color: #e9a921;
+  --folder-front-color: #ffc541;
+  --entry-icon-color: #cf8f00;
   position: relative;
   align-self: end;
   width: 78px;
@@ -138,10 +141,24 @@ body.sessions-open .desktop {
   filter: drop-shadow(0 7px 7px rgb(10 40 75 / 20%));
 }
 
+.entry.has-default-action .folder {
+  --folder-rear-color: #23cb8c;
+  --folder-front-color: #00eaa0;
+  --entry-icon-color: #00b278;
+}
+
 .folder-shape {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.folder-rear {
+  fill: var(--folder-rear-color);
+}
+
+.folder-front {
+  fill: var(--folder-front-color);
 }
 
 .entry-icon {
@@ -153,19 +170,9 @@ body.sessions-open .desktop {
   width: 24px;
   height: 24px;
   overflow: hidden;
-}
-
-.entry-icon img {
-  width: 24px;
-  height: 24px;
-}
-
-.entry-icon.custom-icon img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  background: transparent;
+  background-color: var(--entry-icon-color);
+  -webkit-mask: var(--entry-icon-mask) center / contain no-repeat;
+  mask: var(--entry-icon-mask) center / contain no-repeat;
 }
 
 .entry-label {

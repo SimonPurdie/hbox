@@ -517,7 +517,13 @@ function createEntryElement(
 ): HTMLButtonElement {
   const element = document.createElement("button");
   element.type = "button";
-  element.className = `entry${entry.available ? "" : " unavailable"}`;
+  element.className = [
+    "entry",
+    entry.available ? "" : "unavailable",
+    entry.defaultAction ? "has-default-action" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   element.dataset.entryId = entry.id;
   element.draggable = pinnedCopy;
   element.setAttribute(
@@ -530,11 +536,7 @@ function createEntryElement(
 
   const folder = document.createElement("span");
   folder.className = "folder";
-  const folderImage = document.createElement("img");
-  folderImage.className = "folder-shape";
-  folderImage.src = "/assets/icons/folder.svg";
-  folderImage.alt = "";
-  folder.append(folderImage);
+  folder.append(createFolderShape());
   const icon = createEntryIcon(entry);
   if (icon) {
     folder.append(icon);
@@ -574,26 +576,48 @@ function createEntryElement(
   return element;
 }
 
+function createFolderShape(): SVGSVGElement {
+  const namespace = "http://www.w3.org/2000/svg";
+  const folder = document.createElementNS(namespace, "svg");
+  folder.classList.add("folder-shape");
+  folder.setAttribute("viewBox", "0 0 90 72");
+  folder.setAttribute("aria-hidden", "true");
+  folder.setAttribute("focusable", "false");
+
+  const rear = document.createElementNS(namespace, "path");
+  rear.classList.add("folder-rear");
+  rear.setAttribute(
+    "d",
+    "M10 14a5 5 0 0 1 5-5h17l8 9h35a5 5 0 0 1 5 5v39a5 5 0 0 1-5 5H15a5 5 0 0 1-5-5Z",
+  );
+
+  const front = document.createElementNS(namespace, "path");
+  front.classList.add("folder-front");
+  front.setAttribute(
+    "d",
+    "M10 29a5 5 0 0 1 5-5h60a5 5 0 0 1 5 5v33a5 5 0 0 1-5 5H15a5 5 0 0 1-5-5Z",
+  );
+
+  folder.append(rear, front);
+  return folder;
+}
+
 function createEntryIcon(entry: ClientEntry): HTMLElement | null {
   const icon = document.createElement("span");
   icon.className = "entry-icon";
 
+  let iconUrl: string;
   if (entry.hasCustomIcon) {
-    icon.classList.add("custom-icon");
-    const image = document.createElement("img");
-    image.src = `/api/entries/${encodeURIComponent(entry.id)}/icon`;
-    image.alt = "";
-    icon.append(image);
-    return icon;
+    iconUrl = `/api/entries/${encodeURIComponent(entry.id)}/icon`;
+  } else {
+    const tagIcon = tagIconFor(entry);
+    iconUrl = tagIcon
+      ? tagIconUrls[tagIcon]
+      : "/assets/icons/fallback.svg";
   }
 
-  const tagIcon = tagIconFor(entry);
-  const image = document.createElement("img");
-  image.src = tagIcon
-    ? tagIconUrls[tagIcon]
-    : "/assets/icons/fallback.svg";
-  image.alt = "";
-  icon.append(image);
+  icon.style.setProperty("--entry-icon-mask", `url("${iconUrl}")`);
+  icon.setAttribute("aria-hidden", "true");
   return icon;
 }
 
