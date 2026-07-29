@@ -336,13 +336,16 @@ button.toolbar-icon:disabled {
 }
 
 .config-color input {
-  width: 32px;
+  width: 76px;
   height: 24px;
-  padding: 2px;
+  padding: 2px 25px 2px 7px;
   border: 1px solid color-mix(in srgb, var(--interface-foreground) 28%, transparent);
   border-radius: 6px;
-  background: transparent;
+  color: var(--interface-foreground);
+  background: color-mix(in srgb, var(--interface-foreground) 7%, transparent);
   cursor: pointer;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
 }
 
 .config-color input:focus-visible {
@@ -350,13 +353,18 @@ button.toolbar-icon:disabled {
   outline-offset: 2px;
 }
 
-.config-color input::-webkit-color-swatch-wrapper {
-  padding: 0;
+.config-color .clr-field {
+  display: block;
+  width: 76px;
 }
 
-.config-color input::-webkit-color-swatch {
-  border: 0;
-  border-radius: 3px;
+.config-color .clr-field button {
+  width: 20px;
+  height: 20px;
+  right: 2px;
+  padding: 0;
+  border-radius: 4px;
+  background-color: transparent;
 }
 
 .entry-details-dialog {

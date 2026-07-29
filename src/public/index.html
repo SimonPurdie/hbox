@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <title>HBOX</title>
+    <link rel="stylesheet" href="/assets/vendor/coloris.min.css">
     <link rel="stylesheet" href="/styles.css">
+    <script defer src="/assets/vendor/coloris.min.js"></script>
     <script type="module" src="/assets/app.js"></script>
   </head>
   <body>
@@ -45,7 +47,7 @@
       <button id="restart-server" type="button" role="menuitem">Restart</button>
       <label class="config-color">
         <span>Interface colour</span>
-        <input id="interface-color" type="color" value="#193b56" aria-label="Interface colour">
+        <input id="interface-color" type="text" value="#193b56" aria-label="Interface colour" autocomplete="off" spellcheck="false">
       </label>
     </div>
 

@@ -18,6 +18,7 @@
     "typescript": "^5.9.0"
   },
   "dependencies": {
+    "@melloware/coloris": "0.25.0",
     "saxes": "^6.0.0"
   }
 }

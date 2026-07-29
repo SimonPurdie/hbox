@@ -30,6 +30,23 @@ try {
   await cp("src/public", path.join(buildDirectory, "public"), {
     recursive: true,
   });
+  const vendorDirectory = path.join(
+    buildDirectory,
+    "public",
+    "assets",
+    "vendor",
+  );
+  await mkdir(vendorDirectory, { recursive: true });
+  await Promise.all([
+    cp(
+      "node_modules/@melloware/coloris/dist/umd/coloris.min.js",
+      path.join(vendorDirectory, "coloris.min.js"),
+    ),
+    cp(
+      "node_modules/@melloware/coloris/dist/coloris.min.css",
+      path.join(vendorDirectory, "coloris.min.css"),
+    ),
+  ]);
   await Promise.all([
     run(process.execPath, [
       "node_modules/typescript/bin/tsc",

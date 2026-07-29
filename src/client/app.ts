@@ -65,6 +65,12 @@ const detailMetadata = requiredElement<HTMLElement>("entry-detail-metadata");
 const detailIcon = requiredElement<HTMLElement>("entry-detail-icon");
 const detailId = requiredElement<HTMLElement>("entry-detail-id");
 
+Coloris({
+  el: "#interface-color",
+  alpha: false,
+  swatches: [],
+});
+
 let entries: ClientEntry[] = [];
 let sessions: ClientSession[] = [];
 let sessionsLoading = false;
@@ -84,10 +90,16 @@ closeSessionsButton.addEventListener("click", () => {
 configButton.addEventListener("click", toggleConfigMenu);
 restartButton.addEventListener("click", () => void restartServer());
 interfaceColorInput.addEventListener("input", () => {
-  applyInterfaceColor(interfaceColorInput.value);
+  if (/^#[0-9a-f]{6}$/i.test(interfaceColorInput.value)) {
+    applyInterfaceColor(interfaceColorInput.value);
+  }
 });
 interfaceColorInput.addEventListener("change", () => {
-  void saveInterfaceColor(interfaceColorInput.value);
+  if (/^#[0-9a-f]{6}$/i.test(interfaceColorInput.value)) {
+    void saveInterfaceColor(interfaceColorInput.value);
+  } else {
+    void loadPreferences();
+  }
 });
 pinEntryButton.addEventListener("click", () => {
   const entry = contextEntry;
@@ -265,7 +277,9 @@ async function loadPreferences(): Promise<void> {
       interfaceColor: string;
     };
     interfaceColorInput.value = preferences.interfaceColor;
-    applyInterfaceColor(preferences.interfaceColor);
+    interfaceColorInput.dispatchEvent(
+      new Event("input", { bubbles: true }),
+    );
   } catch (error) {
     console.error(error);
   }
