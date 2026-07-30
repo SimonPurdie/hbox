@@ -233,3 +233,86 @@ test("loads validated action and process Session definitions", async (t) => {
     },
   ]);
 });
+
+test("reports exact diagnostics for every rejected integration field", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-diagnostics-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(path.join(root, ".hbox"));
+  await writeFile(
+    path.join(root, ".hbox", "entry.json"),
+    JSON.stringify({
+      defaultAction: "start-app",
+      actions: {
+        "start-app": { label: "Start app", starts: "missing" },
+        folder: { label: "Folder override", starts: "missing" },
+      },
+      sessions: {
+        command: {
+          type: "process",
+          label: "Bad command",
+          command: "npm run dev",
+        },
+        options: {
+          type: "process",
+          label: "Bad options",
+          command: ["npm", "run", "dev"],
+          stopCommand: [],
+          readyUrl: "ftp://127.0.0.1",
+          openUrl: 42,
+        },
+      },
+    }),
+  );
+
+  const metadata = await readEntryMetadata({
+    kind: "windows",
+    path: root,
+  });
+
+  assert.deepEqual(metadata.diagnostics, [
+    {
+      path: "sessions.command.command",
+      code: "invalid_command",
+      message:
+        "sessions.command.command must be a non-empty array of non-empty strings.",
+    },
+    {
+      path: "sessions.options.stopCommand",
+      code: "invalid_stop_command",
+      message:
+        "sessions.options.stopCommand must be a non-empty array of non-empty strings when present.",
+    },
+    {
+      path: "sessions.options.readyUrl",
+      code: "invalid_ready_url",
+      message:
+        "sessions.options.readyUrl must be an HTTP or HTTPS URL when present.",
+    },
+    {
+      path: "sessions.options.openUrl",
+      code: "invalid_open_url",
+      message:
+        "sessions.options.openUrl must be an HTTP or HTTPS URL when present.",
+    },
+    {
+      path: "actions.start-app.starts",
+      code: "unknown_session",
+      message:
+        "actions.start-app.starts must reference an accepted Session ID.",
+    },
+    {
+      path: "actions.folder",
+      code: "reserved_action_id",
+      message: "actions.folder uses a reserved action ID.",
+    },
+    {
+      path: "defaultAction",
+      code: "invalid_default_action",
+      message:
+        'defaultAction must be "folder", "terminal", or an accepted custom action ID.',
+    },
+  ]);
+  assert.deepEqual(metadata.sessionDefinitions, []);
+  assert.deepEqual(metadata.actionDefinitions, []);
+  assert.equal(metadata.presentation.defaultAction, null);
+});

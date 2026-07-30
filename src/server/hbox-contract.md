@@ -193,9 +193,12 @@ The helper fails when:
 
 - the project folder or `entry.json` is unavailable;
 - `entry.json` is invalid or unreadable;
-- HBOX omits a declared action or Session;
-- HBOX rejects the declared default action; or
+- HBOX rejects a metadata field, action, or Session declaration; or
 - the custom icon is invalid or unreadable.
+
+HBOX reports a rejected value with its field path and requirement, such as
+`sessions.dev.command must be a non-empty array of non-empty strings.` Valid
+declarations remain available when another declaration is rejected.
 
 The helper registers the project only after verification succeeds. Use
 `-VerifyOnly` to inspect without registration.

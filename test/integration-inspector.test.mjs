@@ -94,15 +94,15 @@ test("reports declarations that HBOX omits and an invalid icon", async (t) => {
   assert.equal(result.icon.status, "invalid");
   assert.deepEqual(result.effective.actions, []);
   assert.deepEqual(result.effective.sessions, []);
-  assert.ok(
-    result.issues.some((issue) => issue.includes('action "start-app"')),
-  );
-  assert.ok(
-    result.issues.some((issue) => issue.includes('Session "broken"')),
-  );
-  assert.ok(
-    result.issues.some((issue) => issue.includes("default action")),
-  );
+  assert.ok(result.issues.includes(
+    "sessions.broken.command must be a non-empty array of non-empty strings.",
+  ));
+  assert.ok(result.issues.includes(
+    "actions.start-app.starts must reference an accepted Session ID.",
+  ));
+  assert.ok(result.issues.includes(
+    'defaultAction must be "folder", "terminal", or an accepted custom action ID.',
+  ));
   assert.ok(result.issues.some((issue) => issue.includes("custom SVG")));
 });
 

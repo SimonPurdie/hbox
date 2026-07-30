@@ -1,4 +1,3 @@
-import path from "node:path";
 import { readFile } from "node:fs/promises";
 import {
   isFolderAvailable,
@@ -6,7 +5,6 @@ import {
 } from "./metadata.js";
 import {
   inferredName,
-  locationAccessPath,
 } from "./paths.js";
 import {
   MAX_ICON_BYTES,
@@ -16,8 +14,6 @@ import type {
   EntryLocation,
   IntegrationInspection,
 } from "./types.js";
-
-const runtimePath = process.platform === "win32" ? path.win32 : path;
 
 export async function inspectIntegration(
   location: EntryLocation,
@@ -44,7 +40,10 @@ export async function inspectIntegration(
     location,
     (message) => warnings.push(message),
   );
-  const issues = [...warnings];
+  const issues = [
+    ...warnings,
+    ...metadata.diagnostics.map(({ message }) => message),
+  ];
 
   if (metadata.metadataStatus === "not_found") {
     issues.push("The project does not contain .hbox/entry.json.");
@@ -55,11 +54,6 @@ export async function inspectIntegration(
     issues.push(
       `.hbox/entry.json has status ${metadata.metadataStatus}.`,
     );
-  }
-
-  if (metadata.metadataStatus === "loaded") {
-    const declaration = await readDeclaration(location);
-    addDeclarationIssues(declaration, metadata, issues);
   }
 
   const icon = await inspectIcon(metadata.customIconSource);
@@ -91,64 +85,6 @@ export async function inspectIntegration(
   };
 }
 
-async function readDeclaration(
-  location: EntryLocation,
-): Promise<Record<string, unknown>> {
-  const metadataPath = runtimePath.join(
-    locationAccessPath(location),
-    ".hbox",
-    "entry.json",
-  );
-  const value: unknown = JSON.parse(await readFile(metadataPath, "utf8"));
-  return isRecord(value) ? value : {};
-}
-
-function addDeclarationIssues(
-  declaration: Record<string, unknown>,
-  metadata: Awaited<ReturnType<typeof readEntryMetadata>>,
-  issues: string[],
-): void {
-  addOmittedDefinitionIssues(
-    "action",
-    declaration.actions,
-    new Set(metadata.actionDefinitions.map(({ id }) => id)),
-    issues,
-  );
-  addOmittedDefinitionIssues(
-    "Session",
-    declaration.sessions,
-    new Set(metadata.sessionDefinitions.map(({ id }) => id)),
-    issues,
-  );
-
-  if (
-    Object.hasOwn(declaration, "defaultAction") &&
-    declaration.defaultAction !== metadata.presentation.defaultAction
-  ) {
-    issues.push("HBOX rejected the declared default action.");
-  }
-}
-
-function addOmittedDefinitionIssues(
-  kind: string,
-  declaration: unknown,
-  acceptedIds: ReadonlySet<string>,
-  issues: string[],
-): void {
-  if (declaration === undefined) {
-    return;
-  }
-  if (!isRecord(declaration)) {
-    issues.push(`HBOX ignored the declared ${kind} definitions.`);
-    return;
-  }
-  for (const id of Object.keys(declaration)) {
-    if (!acceptedIds.has(id)) {
-      issues.push(`HBOX ignored declared ${kind} "${id}".`);
-    }
-  }
-}
-
 async function inspectIcon(
   source: Awaited<
     ReturnType<typeof readEntryMetadata>
@@ -176,10 +112,6 @@ async function inspectIcon(
       message: `The custom SVG icon is invalid: ${errorMessage(error)}`,
     };
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

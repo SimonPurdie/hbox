@@ -107,6 +107,8 @@ and would reduce the value of the cache.
 
 ## 4. Return metadata diagnostics from the canonical parser
 
+**Status: complete.**
+
 **Assessment: agree.**
 
 The runtime parser permissively omits invalid declarations. The integration
