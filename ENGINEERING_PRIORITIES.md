@@ -10,6 +10,8 @@ priority are part of that work, not a separate final test phase.
 
 ## 1. Prevent overlapping Session reconciliation
 
+**Status: complete.**
+
 **Assessment: agree. This is the highest-priority issue.**
 
 `SessionManager` starts a reconciliation operation every two seconds. Each

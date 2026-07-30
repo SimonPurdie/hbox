@@ -31,6 +31,7 @@ export class SessionActionUnavailableError extends Error {}
 
 export interface SessionManagerOptions {
   pollIntervalMs?: number;
+  reconcileConcurrency?: number;
   now?: () => Date;
   probeUrl?: (url: string) => Promise<boolean>;
   warn?: (message: string) => void;
@@ -38,9 +39,14 @@ export interface SessionManagerOptions {
 
 export class SessionManager {
   private sessions: StoredSession[] = [];
-  private queue: Promise<void> = Promise.resolve();
+  private readonly sessionQueues = new Map<string, Promise<void>>();
+  private stateQueue: Promise<void> = Promise.resolve();
+  private persistenceQueue: Promise<void> = Promise.resolve();
+  private reconciliation: Promise<void> | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
+  private closed = false;
   private readonly pollIntervalMs: number;
+  private readonly reconcileConcurrency: number;
   private readonly now: () => Date;
   private readonly probeUrl: (url: string) => Promise<boolean>;
   private readonly warn: (message: string) => void;
@@ -52,6 +58,13 @@ export class SessionManager {
     options: SessionManagerOptions = {},
   ) {
     this.pollIntervalMs = options.pollIntervalMs ?? 2_000;
+    this.reconcileConcurrency = options.reconcileConcurrency ?? 4;
+    if (
+      !Number.isSafeInteger(this.reconcileConcurrency) ||
+      this.reconcileConcurrency < 1
+    ) {
+      throw new Error("Session reconciliation concurrency must be positive.");
+    }
     this.now = options.now ?? (() => new Date());
     this.probeUrl = options.probeUrl ?? probeHttpUrl;
     this.warn = options.warn ?? console.warn;
@@ -59,26 +72,20 @@ export class SessionManager {
 
   async initialize(): Promise<void> {
     this.sessions = await this.store.load();
+    this.closed = false;
     await this.reconcileNow();
-    if (this.pollIntervalMs > 0) {
-      this.pollTimer = setInterval(() => {
-        void this.reconcileNow().catch((error: unknown) => {
-          this.warn(`Could not reconcile Sessions: ${errorMessage(error)}`);
-        });
-      }, this.pollIntervalMs);
-      this.pollTimer.unref();
-    }
+    this.schedulePoll();
   }
 
   close(): void {
+    this.closed = true;
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
   }
 
   async listSessions(): Promise<ClientSession[]> {
-    await this.queue;
     return this.sessions
       .map(toClientSession)
       .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
@@ -88,15 +95,47 @@ export class SessionManager {
     entry: StoredEntry,
     definition: ProcessSessionDefinition,
   ): Promise<ClientSession> {
-    return await this.exclusive(async () => {
-      if (definition.singleInstance) {
-        const existing = this.sessions.find(
-          (session) =>
-            session.entryId === entry.id &&
-            session.definitionId === definition.id &&
-            session.status !== "failed",
-        );
+    for (;;) {
+      const selected = await this.withStateLock(async () => {
+        const existing = definition.singleInstance
+          ? this.sessions.find(
+              (session) =>
+                session.entryId === entry.id &&
+                session.definitionId === definition.id &&
+                session.status !== "failed",
+            )
+          : undefined;
         if (existing) {
+          return { kind: "existing" as const, id: existing.id };
+        }
+
+        const session = this.addSession(
+          entry.id,
+          entry.lastKnown.name,
+          entry.location,
+          definition,
+        );
+        return { kind: "created" as const, id: session.id };
+      });
+
+      if (selected.kind === "created") {
+        await this.persist();
+        return await this.withSessionLock(selected.id, async () => {
+          const session = this.requireSession(selected.id);
+          await this.startRuntime(session);
+          return toClientSession(session);
+        });
+      }
+
+      const result = await this.withSessionLock(
+        selected.id,
+        async (): Promise<ClientSession | null> => {
+          const existing = this.sessions.find(
+            (candidate) => candidate.id === selected.id,
+          );
+          if (!existing) {
+            return null;
+          }
           if (
             existing.status === "running" ||
             existing.status === "degraded"
@@ -108,27 +147,22 @@ export class SessionManager {
           }
           if (existing.status === "starting") {
             existing.openPending = Boolean(existing.definition.openUrl);
-            await this.store.save(this.sessions);
+            await this.persist();
             return toClientSession(existing);
           }
           throw new SessionConflictError(
             "The existing Session must be resolved before another can start.",
           );
-        }
-      }
-
-      const session = await this.createSession(
-        entry.id,
-        entry.lastKnown.name,
-        entry.location,
-        definition,
+        },
       );
-      return toClientSession(session);
-    });
+      if (result) {
+        return result;
+      }
+    }
   }
 
   async openSession(sessionId: string): Promise<void> {
-    await this.exclusive(async () => {
+    await this.withSessionLock(sessionId, async () => {
       const session = this.requireSession(sessionId);
       if (
         !session.definition.openUrl ||
@@ -144,7 +178,7 @@ export class SessionManager {
   }
 
   async stopSession(sessionId: string): Promise<void> {
-    await this.exclusive(async () => {
+    await this.withSessionLock(sessionId, async () => {
       const session = this.requireSession(sessionId);
       if (
         session.status !== "starting" &&
@@ -159,7 +193,7 @@ export class SessionManager {
       const inspection = await this.runtime.inspect(session);
       if (inspection.kind !== "alive") {
         await this.applyInspection(session, inspection);
-        await this.store.save(this.sessions);
+        await this.persist();
         throw new SessionActionUnavailableError(
           "HBOX could not verify the process before stopping it.",
         );
@@ -168,7 +202,7 @@ export class SessionManager {
         session.status = "disconnected";
         session.message =
           "HBOX could not verify the process while requesting shutdown.";
-        await this.store.save(this.sessions);
+        await this.persist();
         throw new SessionActionUnavailableError(session.message);
       }
 
@@ -176,12 +210,12 @@ export class SessionManager {
       session.stopRequestedAt = this.now().toISOString();
       session.restartPending = false;
       session.message = null;
-      await this.store.save(this.sessions);
+      await this.persist();
     });
   }
 
   async restartSession(sessionId: string): Promise<void> {
-    await this.exclusive(async () => {
+    await this.withSessionLock(sessionId, async () => {
       const session = this.requireSession(sessionId);
       if (session.status === "failed") {
         const snapshot = session;
@@ -189,14 +223,16 @@ export class SessionManager {
           (candidate) => candidate.id !== session.id,
         );
         await this.runtime.cleanup(snapshot);
-        await this.createSession(
+        const replacement = this.addSession(
           snapshot.entryId,
           snapshot.entryName,
           snapshot.location,
           snapshot.definition,
-          false,
         );
-        await this.store.save(this.sessions);
+        await this.persist();
+        await this.withSessionLock(replacement.id, async () => {
+          await this.startRuntime(replacement);
+        });
         return;
       }
       if (
@@ -220,7 +256,7 @@ export class SessionManager {
           session.message =
             "HBOX could not verify the process while requesting restart.";
         }
-        await this.store.save(this.sessions);
+        await this.persist();
         throw new SessionActionUnavailableError(
           "HBOX could not safely restart this Session.",
         );
@@ -230,12 +266,12 @@ export class SessionManager {
       session.stopRequestedAt = this.now().toISOString();
       session.restartPending = true;
       session.message = null;
-      await this.store.save(this.sessions);
+      await this.persist();
     });
   }
 
   async forgetSession(sessionId: string): Promise<void> {
-    await this.exclusive(async () => {
+    await this.withSessionLock(sessionId, async () => {
       const session = this.requireSession(sessionId);
       if (
         session.status !== "failed" &&
@@ -251,50 +287,116 @@ export class SessionManager {
       if (session.status === "failed") {
         await this.runtime.cleanup(session);
       }
-      await this.store.save(this.sessions);
+      await this.persist();
     });
   }
 
   async recheckSession(sessionId: string): Promise<void> {
-    await this.exclusive(async () => {
-      const session = this.requireSession(sessionId);
-      if (session.status !== "disconnected") {
+    const snapshot = await this.withSessionLock(sessionId, async () => {
+      const current = this.requireSession(sessionId);
+      if (current.status !== "disconnected") {
         throw new SessionActionUnavailableError(
           "Only disconnected Sessions need a manual check.",
         );
       }
-      const before = structuredClone(session);
-      await this.reconcileSession(session);
-      if (!isDeepStrictEqual(before, session)) {
-        await this.store.save(this.sessions);
+      return structuredClone(current);
+    });
+    const inspection = await this.inspectSnapshot(snapshot);
+    await this.withSessionLock(sessionId, async () => {
+      const current = this.sessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      if (!current || !isDeepStrictEqual(current, snapshot)) {
+        return;
       }
+      await this.applyInspection(current, inspection.runtime, inspection.ready);
+      await this.persist();
     });
   }
 
   async reconcileNow(): Promise<void> {
-    await this.exclusive(async () => {
-      const before = structuredClone(this.sessions);
-      for (const session of [...this.sessions]) {
-        await this.reconcileSession(session);
+    if (this.reconciliation) {
+      return await this.reconciliation;
+    }
+
+    const reconciliation = this.reconcileAll();
+    this.reconciliation = reconciliation;
+    try {
+      await reconciliation;
+    } finally {
+      if (this.reconciliation === reconciliation) {
+        this.reconciliation = null;
       }
-      if (!isDeepStrictEqual(before, this.sessions)) {
-        await this.store.save(this.sessions);
+    }
+  }
+
+  private async reconcileAll(): Promise<void> {
+    const sessionIds = this.sessions.map(({ id }) => id);
+    await mapConcurrent(
+      sessionIds,
+      this.reconcileConcurrency,
+      async (sessionId) => this.reconcileSession(sessionId),
+    );
+  }
+
+  private async reconcileSession(sessionId: string): Promise<void> {
+    const snapshot = await this.withSessionLock(
+      sessionId,
+      async (): Promise<StoredSession | null> => {
+        const current = this.sessions.find(
+          (candidate) => candidate.id === sessionId,
+        );
+        return current && current.status !== "failed"
+          ? structuredClone(current)
+          : null;
+      },
+    );
+    if (!snapshot) {
+      return;
+    }
+
+    const inspection = await this.inspectSnapshot(snapshot);
+    await this.withSessionLock(sessionId, async () => {
+      const current = this.sessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      if (!current || !isDeepStrictEqual(current, snapshot)) {
+        return;
+      }
+      await this.applyInspection(current, inspection.runtime, inspection.ready);
+      const resultingSession = this.sessions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      if (
+        !resultingSession ||
+        !isDeepStrictEqual(resultingSession, snapshot)
+      ) {
+        await this.persist();
       }
     });
   }
 
-  private async reconcileSession(session: StoredSession): Promise<void> {
-    if (session.status === "failed") {
-      return;
+  private async inspectSnapshot(
+    snapshot: StoredSession,
+  ): Promise<{ runtime: RuntimeInspection; ready?: boolean }> {
+    const runtime = await this.runtime.inspect(snapshot);
+    if (
+      runtime.kind !== "alive" ||
+      snapshot.stopRequestedAt ||
+      !snapshot.definition.readyUrl
+    ) {
+      return { runtime };
     }
-
-    const inspection = await this.runtime.inspect(session);
-    await this.applyInspection(session, inspection);
+    return {
+      runtime,
+      ready: await this.probeUrl(snapshot.definition.readyUrl),
+    };
   }
 
   private async applyInspection(
     session: StoredSession,
     inspection: RuntimeInspection,
+    readyResult?: boolean,
   ): Promise<void> {
     if (inspection.kind === "disconnected") {
       session.status = "disconnected";
@@ -351,7 +453,7 @@ export class SessionManager {
     }
 
     const ready = session.definition.readyUrl
-      ? await this.probeUrl(session.definition.readyUrl)
+      ? readyResult ?? await this.probeUrl(session.definition.readyUrl)
       : true;
     if (ready) {
       session.status = "running";
@@ -392,23 +494,24 @@ export class SessionManager {
     );
     await this.runtime.cleanup(session);
     if (session.restartPending) {
-      await this.createSession(
+      const replacement = this.addSession(
         session.entryId,
         session.entryName,
         session.location,
         session.definition,
-        false,
       );
+      await this.withSessionLock(replacement.id, async () => {
+        await this.startRuntime(replacement);
+      });
     }
   }
 
-  private async createSession(
+  private addSession(
     entryId: string,
     entryName: string,
     location: EntryLocation,
     definition: ProcessSessionDefinition,
-    save: boolean = true,
-  ): Promise<StoredSession> {
+  ): StoredSession {
     const session: StoredSession = {
       id: randomUUID(),
       entryId,
@@ -425,19 +528,18 @@ export class SessionManager {
       restartPending: false,
     };
     this.sessions.push(session);
-    if (save) {
-      await this.store.save(this.sessions);
-    }
+    return session;
+  }
 
+  private async startRuntime(session: StoredSession): Promise<void> {
     try {
       await this.runtime.start(session);
     } catch (error) {
       session.status = "failed";
       session.openPending = false;
       session.message = `Could not start the Session runner: ${errorMessage(error)}`;
-      await this.store.save(this.sessions);
+      await this.persist();
     }
-    return session;
   }
 
   private requireSession(sessionId: string): StoredSession {
@@ -450,10 +552,31 @@ export class SessionManager {
     return session;
   }
 
-  private async exclusive<T>(operation: () => Promise<T>): Promise<T> {
-    const previous = this.queue;
+  private async withSessionLock<T>(
+    sessionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.sessionQueues.get(sessionId) ?? Promise.resolve();
     let release!: () => void;
-    this.queue = new Promise<void>((resolve) => {
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.sessionQueues.set(sessionId, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.sessionQueues.get(sessionId) === current) {
+        this.sessionQueues.delete(sessionId);
+      }
+    }
+  }
+
+  private async withStateLock<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.stateQueue;
+    let release!: () => void;
+    this.stateQueue = new Promise<void>((resolve) => {
       release = resolve;
     });
     await previous;
@@ -463,6 +586,61 @@ export class SessionManager {
       release();
     }
   }
+
+  private async persist(): Promise<void> {
+    const previous = this.persistenceQueue;
+    let release!: () => void;
+    this.persistenceQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      await this.store.save(structuredClone(this.sessions));
+    } finally {
+      release();
+    }
+  }
+
+  private schedulePoll(): void {
+    if (
+      this.closed ||
+      this.pollIntervalMs <= 0 ||
+      this.pollTimer
+    ) {
+      return;
+    }
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
+      void this.reconcileNow()
+        .catch((error: unknown) => {
+          this.warn(`Could not reconcile Sessions: ${errorMessage(error)}`);
+        })
+        .finally(() => this.schedulePoll());
+    }, this.pollIntervalMs);
+    this.pollTimer.unref();
+  }
+}
+
+async function mapConcurrent<T>(
+  values: readonly T[],
+  concurrency: number,
+  operation: (value: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, values.length) },
+    async () => {
+      for (;;) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= values.length) {
+          return;
+        }
+        await operation(values[index]!);
+      }
+    },
+  );
+  await Promise.all(workers);
 }
 
 function toClientSession(session: StoredSession): ClientSession {

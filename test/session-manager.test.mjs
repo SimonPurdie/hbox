@@ -58,6 +58,26 @@ class FakeRuntime {
   }
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function waitFor(predicate, message, timeoutMs = 500) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error(message);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+}
+
 test("starts, reconciles, persists, and cleanly stops a WSL Session", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -210,6 +230,206 @@ test("accepts a Windows Entry through the shared Session lifecycle", async (t) =
   );
   assert.equal(started.status, "starting");
   assert.deepEqual(runtime.starts, [started.id]);
+});
+
+test("does not queue automatic reconciliation while a probe is slow", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const runtime = new FakeRuntime();
+  const probe = deferred();
+  let probeCalls = 0;
+  const manager = new SessionManager(
+    new SessionStore(root),
+    runtime,
+    { openUrl: async () => {} },
+    {
+      pollIntervalMs: 5,
+      probeUrl: async () => {
+        probeCalls += 1;
+        return await probe.promise;
+      },
+    },
+  );
+  t.after(() => manager.close());
+  await manager.initialize();
+  const started = await manager.startSession(entry, definition);
+  runtime.inspections.set(started.id, { kind: "alive", pid: 123 });
+
+  await waitFor(
+    () => probeCalls === 1,
+    "The automatic readiness probe did not start.",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(probeCalls, 1);
+
+  manager.close();
+  probe.resolve(true);
+  await manager.reconcileNow();
+  assert.equal((await manager.listSessions())[0].status, "running");
+});
+
+test("a slow Session does not delay an action on another Session", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const slowInspection = deferred();
+  const slowInspectionStarted = deferred();
+  const stopped = deferred();
+  let slowSessionId;
+  const runtime = {
+    async start() {},
+    async inspect(session) {
+      if (session.id === slowSessionId) {
+        slowInspectionStarted.resolve();
+        return await slowInspection.promise;
+      }
+      return { kind: "alive", pid: 456 };
+    },
+    async stop(session, force) {
+      stopped.resolve({ id: session.id, force });
+      return true;
+    },
+    async cleanup() {},
+  };
+  const manager = new SessionManager(
+    new SessionStore(root),
+    runtime,
+    { openUrl: async () => {} },
+    {
+      pollIntervalMs: 0,
+      reconcileConcurrency: 1,
+      probeUrl: async () => true,
+    },
+  );
+  await manager.initialize();
+  const first = await manager.startSession(
+    entry,
+    { ...definition, singleInstance: false },
+  );
+  slowSessionId = first.id;
+  const second = await manager.startSession(
+    {
+      ...entry,
+      id: "9d65c13b-32db-46c5-a537-6196bc36a8b4",
+      lastKnown: { ...entry.lastKnown, name: "Other Project" },
+    },
+    { ...definition, singleInstance: false },
+  );
+
+  const reconciliation = manager.reconcileNow();
+  await slowInspectionStarted.promise;
+  const stop = manager.stopSession(second.id);
+  const stopResult = await Promise.race([
+    stopped.promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error("The unrelated stop action was delayed.")),
+        250,
+      ),
+    ),
+  ]);
+  assert.deepEqual(stopResult, { id: second.id, force: false });
+  await stop;
+
+  slowInspection.resolve({ kind: "alive", pid: 123 });
+  await reconciliation;
+  assert.equal(
+    (await manager.listSessions()).find(({ id }) => id === second.id).status,
+    "stopping",
+  );
+});
+
+test("a stale inspection cannot overwrite a newer Session action", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const staleInspection = deferred();
+  const inspectionStarted = deferred();
+  let inspectionCalls = 0;
+  const runtime = {
+    async start() {},
+    async inspect() {
+      inspectionCalls += 1;
+      if (inspectionCalls === 1) {
+        inspectionStarted.resolve();
+        return await staleInspection.promise;
+      }
+      return { kind: "alive", pid: 456 };
+    },
+    async stop() {
+      return true;
+    },
+    async cleanup() {},
+  };
+  const manager = new SessionManager(
+    new SessionStore(root),
+    runtime,
+    { openUrl: async () => {} },
+    { pollIntervalMs: 0, probeUrl: async () => true },
+  );
+  await manager.initialize();
+  const started = await manager.startSession(entry, definition);
+
+  const reconciliation = manager.reconcileNow();
+  await inspectionStarted.promise;
+  await manager.stopSession(started.id);
+  staleInspection.resolve({ kind: "alive", pid: 123 });
+  await reconciliation;
+
+  const [session] = await manager.listSessions();
+  assert.equal(session.status, "stopping");
+  assert.equal(inspectionCalls, 2);
+});
+
+test("reconciles Sessions with bounded concurrency and persists every result", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let activeInspections = 0;
+  let maximumInspections = 0;
+  const runtime = {
+    async start() {},
+    async inspect() {
+      activeInspections += 1;
+      maximumInspections = Math.max(maximumInspections, activeInspections);
+      await new Promise((resolve) => setImmediate(resolve));
+      activeInspections -= 1;
+      return { kind: "alive", pid: 123 };
+    },
+    async stop() {
+      return true;
+    },
+    async cleanup() {},
+  };
+  const manager = new SessionManager(
+    new SessionStore(root),
+    runtime,
+    { openUrl: async () => {} },
+    {
+      pollIntervalMs: 0,
+      reconcileConcurrency: 3,
+      probeUrl: async () => true,
+    },
+  );
+  await manager.initialize();
+  for (let index = 0; index < 7; index += 1) {
+    await manager.startSession(
+      {
+        ...entry,
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      },
+      { ...definition, singleInstance: false },
+    );
+  }
+
+  await manager.reconcileNow();
+
+  assert.equal(maximumInspections, 3);
+  assert.deepEqual(
+    (await manager.listSessions()).map(({ status }) => status),
+    Array(7).fill("running"),
+  );
+  assert.deepEqual(
+    (await new SessionStore(root).load()).map(({ status }) => status),
+    Array(7).fill("running"),
+  );
 });
 
 test("migrates version 1 WSL Session records", async (t) => {
