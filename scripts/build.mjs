@@ -1,8 +1,16 @@
 import path from "node:path";
-import { cp, mkdir, rename, rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import {
+  computeBuildFingerprint,
+  isBuildCurrent,
+  replaceBuildOutput,
+  resolveCSharpCompiler,
+  writeBuildManifest,
+} from "./build-lib.mjs";
 
 const buildId = `${process.pid}-${Date.now()}`;
+const projectDirectory = path.resolve(".");
 const buildDirectory = path.resolve(`.hbox-build-${buildId}`);
 const outputDirectory = path.resolve("dist");
 const backupDirectory = path.resolve(`.hbox-dist-backup-${buildId}`);
@@ -14,6 +22,19 @@ const windowsSessionSources = [
   "windows-session-supervisor.cs",
   "windows-session-native.cs",
 ].map((name) => path.resolve("src/server", name));
+const fingerprint = await computeBuildFingerprint({ projectDirectory });
+const force = process.argv.includes("--force");
+
+if (
+  !force &&
+  await isBuildCurrent({
+    outputDirectory,
+    fingerprint,
+  })
+) {
+  console.log("HBOX build is current.");
+  process.exit(0);
+}
 
 async function run(command, args) {
   await new Promise((resolve, reject) => {
@@ -86,14 +107,7 @@ try {
     path.join(buildDirectory, "server", "hbox-contract.md"),
   );
   if (process.platform === "win32") {
-    const windowsDirectory = process.env.WINDIR ?? String.raw`C:\Windows`;
-    const compiler = path.join(
-      windowsDirectory,
-      "Microsoft.NET",
-      "Framework64",
-      "v4.0.30319",
-      "csc.exe",
-    );
+    const compiler = await resolveCSharpCompiler();
     await Promise.all([
       run(compiler, [
         "/nologo",
@@ -113,34 +127,16 @@ try {
       ]),
     ]);
   }
-  await replaceOutput();
+  await writeBuildManifest({
+    buildDirectory,
+    fingerprint,
+  });
+  await replaceBuildOutput({
+    buildDirectory,
+    outputDirectory,
+    backupDirectory,
+  });
 } catch (error) {
   await rm(buildDirectory, { recursive: true, force: true });
   throw error;
-}
-
-async function replaceOutput() {
-  let hasBackup = false;
-  try {
-    await rm(backupDirectory, { recursive: true, force: true });
-    try {
-      await rename(outputDirectory, backupDirectory);
-      hasBackup = true;
-    } catch (error) {
-      if (error?.code !== "ENOENT") {
-        throw error;
-      }
-    }
-
-    await rename(buildDirectory, outputDirectory);
-  } catch (error) {
-    if (hasBackup) {
-      await rename(backupDirectory, outputDirectory);
-    }
-    throw error;
-  }
-
-  if (hasBackup) {
-    await rm(backupDirectory, { recursive: true, force: true });
-  }
 }

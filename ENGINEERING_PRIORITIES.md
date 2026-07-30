@@ -195,6 +195,8 @@ focused tests only where extraction exposes a useful seam.
 
 ## 7. Improve the development loop without weakening start behavior
 
+**Status: complete.**
+
 **Assessment: partly agree.**
 
 A watch command would reduce iteration time, but it is not a runtime issue.

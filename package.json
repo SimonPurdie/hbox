@@ -7,9 +7,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "npm run build && node dist/server/index.js",
-    "prestart": "npm run build",
+    "build": "node scripts/build.mjs --force",
+    "build:if-needed": "node scripts/build.mjs",
+    "dev": "node scripts/dev.mjs",
+    "prestart": "npm run build:if-needed",
     "start": "node dist/server/index.js",
     "startup:install": "npm run build && node scripts/windows-startup.mjs install",
     "startup:uninstall": "node scripts/windows-startup.mjs uninstall",
