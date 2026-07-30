@@ -85,34 +85,37 @@ export class EntryService {
   ) {}
 
   async initialize(): Promise<void> {
-    await this.registry.load();
+    await this.registry.initialize();
   }
 
   async listEntries(): Promise<ClientEntry[]> {
-    const data = await this.registry.load();
-    let registryChanged = false;
+    const data = await this.registry.read();
     const pinnedPositions = new Map(
       data.pinnedEntryIds.map((entryId, index) => [entryId, index]),
     );
 
-    const entries = await Promise.all(
+    const refreshedEntries = await Promise.all(
       data.entries.map(async (entry) => {
         const refreshed = await this.refreshEntry(entry);
-        if (refreshed.changed) {
-          entry.lastKnown = refreshed.entry.lastKnown;
-          registryChanged = true;
-        }
-        return toClientEntry(
-          refreshed.entry,
-          refreshed.available,
-          pinnedPositions.get(entry.id) ?? null,
-        );
+        return { original: entry, ...refreshed };
       }),
     );
-
-    if (registryChanged) {
-      await this.registry.save(data);
+    const changedEntries = refreshedEntries.filter(({ changed }) => changed);
+    if (changedEntries.length > 0) {
+      await this.registry.update((current) => {
+        for (const { original, entry } of changedEntries) {
+          mergeLastKnown(current, original, entry.lastKnown);
+        }
+      });
     }
+
+    const entries = refreshedEntries.map(({ entry, available }) =>
+      toClientEntry(
+        entry,
+        available,
+        pinnedPositions.get(entry.id) ?? null,
+      ),
+    );
 
     return entries.sort((left, right) =>
       left.name.localeCompare(right.name, undefined, {
@@ -136,22 +139,25 @@ export class EntryService {
 
   async registerLocation(selectedPath: string): Promise<RegistrationResult> {
     const location = parseEntryLocation(selectedPath);
-    const data = await this.registry.load();
-    const duplicate = findByLocation(data, location);
+    const snapshot = await this.registry.read();
+    const duplicate = findByLocation(snapshot, location);
     if (duplicate) {
       const refreshed = await this.refreshEntry(duplicate);
       if (refreshed.changed) {
-        duplicate.lastKnown = refreshed.entry.lastKnown;
-        await this.registry.save(data);
+        await this.mergeRefreshedEntry(duplicate, refreshed.entry);
       }
-      return {
-        entry: toClientEntry(
-          refreshed.entry,
-          refreshed.available,
-          pinPosition(data, duplicate.id),
-        ),
-        created: false,
-      };
+      const current = await this.registry.read();
+      const currentDuplicate = findByLocation(current, location);
+      if (currentDuplicate) {
+        return {
+          entry: toClientEntry(
+            currentDuplicate,
+            refreshed.available,
+            pinPosition(current, currentDuplicate.id),
+          ),
+          created: false,
+        };
+      }
     }
 
     if (!(await isFolderAvailable(location))) {
@@ -160,24 +166,51 @@ export class EntryService {
 
     const id = randomUUID();
     const metadata = await readEntryMetadata(location, this.warn);
-    const hasCustomIcon = await this.syncCachedIcon(id, metadata);
-
-    const entry: StoredEntry = {
-      id,
-      location,
-      lastKnown: { ...metadata.presentation, hasCustomIcon },
-    };
-    data.entries.push(entry);
-    await this.registry.save(data);
+    const registration = await this.registry.update((data) => {
+      const currentDuplicate = findByLocation(data, location);
+      if (currentDuplicate) {
+        return { id: currentDuplicate.id, created: false };
+      }
+      data.entries.push({
+        id,
+        location,
+        lastKnown: {
+          ...metadata.presentation,
+          hasCustomIcon: false,
+        },
+      });
+      return { id, created: true };
+    });
+    const hasCustomIcon = await this.syncCachedIcon(
+      registration.id,
+      metadata,
+    );
+    await this.registry.update((data) => {
+      const entry = data.entries.find(
+        (candidate) => candidate.id === registration.id,
+      );
+      if (entry && locationKey(entry.location) === locationKey(location)) {
+        entry.lastKnown = {
+          ...metadata.presentation,
+          hasCustomIcon,
+        };
+      }
+    });
+    const current = await this.registry.read();
+    const entry = requireEntry(current, registration.id);
 
     return {
-      entry: toClientEntry(entry, true, null),
-      created: true,
+      entry: toClientEntry(
+        entry,
+        true,
+        pinPosition(current, entry.id),
+      ),
+      created: registration.created,
     };
   }
 
   async performAction(entryId: string, action: ActionName): Promise<void> {
-    const data = await this.registry.load();
+    const data = await this.registry.read();
     const entry = data.entries.find((candidate) => candidate.id === entryId);
     if (!entry) {
       throw new EntryNotFoundError(entryId);
@@ -210,7 +243,7 @@ export class EntryService {
     entryId: string,
     action: BuiltInActionName,
   ): Promise<LaunchCommand> {
-    const data = await this.registry.load();
+    const data = await this.registry.read();
     const entry = data.entries.find((candidate) => candidate.id === entryId);
     if (!entry) {
       throw new EntryNotFoundError(entryId);
@@ -222,7 +255,7 @@ export class EntryService {
   }
 
   async getEntryDetails(entryId: string): Promise<EntryDetails> {
-    const data = await this.registry.load();
+    const data = await this.registry.read();
     const entry = data.entries.find((candidate) => candidate.id === entryId);
     if (!entry) {
       throw new EntryNotFoundError(entryId);
@@ -230,66 +263,67 @@ export class EntryService {
 
     const refreshed = await this.refreshEntry(entry);
     if (refreshed.changed) {
-      entry.lastKnown = refreshed.entry.lastKnown;
-      await this.registry.save(data);
+      await this.mergeRefreshedEntry(entry, refreshed.entry);
     }
+    const current = await this.registry.read();
+    const currentEntry = requireEntry(current, entryId);
 
     return toEntryDetails(
-      refreshed.entry,
+      currentEntry,
       refreshed.available,
       refreshed.metadataStatus,
-      pinPosition(data, entry.id),
+      pinPosition(current, currentEntry.id),
     );
   }
 
   async pinEntry(entryId: string): Promise<void> {
-    const data = await this.registry.load();
-    requireEntry(data, entryId);
-    if (!data.pinnedEntryIds.includes(entryId)) {
-      data.pinnedEntryIds.push(entryId);
-      await this.registry.save(data);
-    }
+    await this.registry.update((data) => {
+      requireEntry(data, entryId);
+      if (!data.pinnedEntryIds.includes(entryId)) {
+        data.pinnedEntryIds.push(entryId);
+      }
+    });
   }
 
   async unpinEntry(entryId: string): Promise<void> {
-    const data = await this.registry.load();
-    requireEntry(data, entryId);
-    const pinIndex = data.pinnedEntryIds.indexOf(entryId);
-    if (pinIndex !== -1) {
-      data.pinnedEntryIds.splice(pinIndex, 1);
-      await this.registry.save(data);
-    }
+    await this.registry.update((data) => {
+      requireEntry(data, entryId);
+      const pinIndex = data.pinnedEntryIds.indexOf(entryId);
+      if (pinIndex !== -1) {
+        data.pinnedEntryIds.splice(pinIndex, 1);
+      }
+    });
   }
 
   async reorderPinnedEntries(entryIds: string[]): Promise<void> {
-    const data = await this.registry.load();
-    if (
-      entryIds.length !== data.pinnedEntryIds.length ||
-      new Set(entryIds).size !== entryIds.length ||
-      entryIds.some((entryId) => !data.pinnedEntryIds.includes(entryId))
-    ) {
-      throw new InvalidPinOrderError();
-    }
-    if (!isDeepStrictEqual(entryIds, data.pinnedEntryIds)) {
-      data.pinnedEntryIds = [...entryIds];
-      await this.registry.save(data);
-    }
+    await this.registry.update((data) => {
+      if (
+        entryIds.length !== data.pinnedEntryIds.length ||
+        new Set(entryIds).size !== entryIds.length ||
+        entryIds.some((entryId) => !data.pinnedEntryIds.includes(entryId))
+      ) {
+        throw new InvalidPinOrderError();
+      }
+      if (!isDeepStrictEqual(entryIds, data.pinnedEntryIds)) {
+        data.pinnedEntryIds = [...entryIds];
+      }
+    });
   }
 
   async removeEntry(entryId: string): Promise<void> {
-    const data = await this.registry.load();
-    const entryIndex = data.entries.findIndex(
-      (candidate) => candidate.id === entryId,
-    );
-    if (entryIndex === -1) {
-      throw new EntryNotFoundError(entryId);
-    }
+    await this.registry.update((data) => {
+      const entryIndex = data.entries.findIndex(
+        (candidate) => candidate.id === entryId,
+      );
+      if (entryIndex === -1) {
+        throw new EntryNotFoundError(entryId);
+      }
 
-    data.entries.splice(entryIndex, 1);
-    data.pinnedEntryIds = data.pinnedEntryIds.filter(
-      (candidate) => candidate !== entryId,
-    );
-    await this.registry.save(data);
+      data.entries.splice(entryIndex, 1);
+      data.pinnedEntryIds = data.pinnedEntryIds.filter(
+        (candidate) => candidate !== entryId,
+      );
+    });
     try {
       await this.registry.removeCachedIcon(entryId);
     } catch (error) {
@@ -300,7 +334,7 @@ export class EntryService {
   }
 
   async readCachedIcon(entryId: string): Promise<Buffer> {
-    const data = await this.registry.load();
+    const data = await this.registry.read();
     const entry = data.entries.find((candidate) => candidate.id === entryId);
     if (!entry) {
       throw new EntryNotFoundError(entryId);
@@ -314,6 +348,15 @@ export class EntryService {
     } catch {
       throw new EntryNotFoundError(entryId);
     }
+  }
+
+  private async mergeRefreshedEntry(
+    original: StoredEntry,
+    refreshed: StoredEntry,
+  ): Promise<void> {
+    await this.registry.update((data) => {
+      mergeLastKnown(data, original, refreshed.lastKnown);
+    });
   }
 
   private async refreshEntry(
@@ -451,6 +494,23 @@ function requireEntry(data: RegistryData, entryId: string): StoredEntry {
     throw new EntryNotFoundError(entryId);
   }
   return entry;
+}
+
+function mergeLastKnown(
+  data: RegistryData,
+  original: StoredEntry,
+  lastKnown: StoredEntry["lastKnown"],
+): void {
+  const current = data.entries.find(
+    (candidate) => candidate.id === original.id,
+  );
+  if (
+    current &&
+    locationKey(current.location) === locationKey(original.location) &&
+    isDeepStrictEqual(current.lastKnown, original.lastKnown)
+  ) {
+    current.lastKnown = structuredClone(lastKnown);
+  }
 }
 
 function pinPosition(data: RegistryData, entryId: string): number | null {

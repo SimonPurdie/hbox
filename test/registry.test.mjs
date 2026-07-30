@@ -11,7 +11,7 @@ test("does not overwrite a corrupt registry", async (t) => {
   const registry = new Registry(root);
   await writeFile(registry.registryPath, "{ definitely not JSON");
 
-  await assert.rejects(registry.load(), /not valid JSON/);
+  await assert.rejects(registry.initialize(), /not valid JSON/);
   assert.equal(
     await import("node:fs/promises").then(({ readFile }) =>
       readFile(registry.registryPath, "utf8"),
@@ -43,7 +43,7 @@ test("rejects registry IDs that could escape the icon cache", async (t) => {
     }),
   );
 
-  await assert.rejects(registry.load(), /invalid structure/);
+  await assert.rejects(registry.initialize(), /invalid structure/);
 });
 
 test("loads old registries and normalizes their pinned Entry IDs", async (t) => {
@@ -66,7 +66,8 @@ test("loads old registries and normalizes their pinned Entry IDs", async (t) => 
     registry.registryPath,
     JSON.stringify({ version: 1, entries: [entry] }),
   );
-  assert.deepEqual(await registry.load(), {
+  await registry.initialize();
+  assert.deepEqual(await registry.read(), {
     version: 1,
     entries: [
       {
@@ -85,7 +86,9 @@ test("loads old registries and normalizes their pinned Entry IDs", async (t) => 
       pinnedEntryIds: [entryId, entryId, "missing"],
     }),
   );
-  const loaded = await registry.load();
+  const reloadedRegistry = new Registry(root);
+  await reloadedRegistry.initialize();
+  const loaded = await reloadedRegistry.read();
   assert.deepEqual(loaded.pinnedEntryIds, [entryId]);
   assert.deepEqual(loaded.entries[0].lastKnown.actions, []);
 });

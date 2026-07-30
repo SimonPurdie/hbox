@@ -43,6 +43,8 @@ Add deterministic tests that prove:
 
 ## 2. Make Registry changes transactional
 
+**Status: complete.**
+
 **Assessment: agree. Atomic file replacement does not prevent lost updates.**
 
 Entry operations currently load, change, and save independent snapshots.

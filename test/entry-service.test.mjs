@@ -20,6 +20,28 @@ import {
 } from "../dist/server/entry-service.js";
 import { Registry } from "../dist/server/registry.js";
 
+function deferred() {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+class BlockingIconRegistry extends Registry {
+  blockIconReads = false;
+  iconReadStarted = deferred();
+  releaseIconRead = deferred();
+
+  async readIconCacheRecord(entryId) {
+    if (this.blockIconReads) {
+      this.iconReadStarted.resolve();
+      await this.releaseIconRead.promise;
+    }
+    return await super.readIconCacheRecord(entryId);
+  }
+}
+
 test("keeps a missing Entry visible from its last-known cache and rejects actions", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "hbox-service-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -118,6 +140,120 @@ test("returns the existing Entry when the picker selects a duplicate", async (t)
   assert.equal(second?.created, false);
   assert.equal(first?.entry.id, second?.entry.id);
   assert.equal((await service.listEntries()).length, 1);
+});
+
+test("overlapping registrations create one Entry", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-registration-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  await mkdir(project);
+  const registry = new Registry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => null },
+    { launch: async () => {} },
+    () => {},
+  );
+
+  const registrations = await Promise.all([
+    service.registerLocation(project),
+    service.registerLocation(project),
+  ]);
+
+  assert.deepEqual(
+    registrations.map(({ created }) => created).sort(),
+    [false, true],
+  );
+  assert.equal(registrations[0].entry.id, registrations[1].entry.id);
+  assert.equal((await registry.read()).entries.length, 1);
+});
+
+test("metadata refresh cannot undo an overlapping pin", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-refresh-race-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  const metadataDirectory = path.join(project, ".hbox");
+  await mkdir(metadataDirectory, { recursive: true });
+  await writeFile(
+    path.join(metadataDirectory, "entry.json"),
+    JSON.stringify({ name: "Before refresh" }),
+  );
+  await writeFile(
+    path.join(metadataDirectory, "icon.svg"),
+    '<svg viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>',
+  );
+  const registry = new BlockingIconRegistry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => null },
+    { launch: async () => {} },
+    () => {},
+  );
+  const registration = await service.registerLocation(project);
+  await writeFile(
+    path.join(metadataDirectory, "entry.json"),
+    JSON.stringify({ name: "After refresh" }),
+  );
+  registry.blockIconReads = true;
+
+  const refresh = service.listEntries();
+  await registry.iconReadStarted.promise;
+  await service.pinEntry(registration.entry.id);
+  registry.releaseIconRead.resolve();
+  await refresh;
+
+  const data = await registry.read();
+  assert.deepEqual(data.pinnedEntryIds, [registration.entry.id]);
+  assert.equal(data.entries[0].lastKnown.name, "After refresh");
+});
+
+test("registration, pin reorder, and removal preserve every overlapping change", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-entry-races-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const projects = ["Alpha", "Bravo", "Charlie", "Remove", "New"].map(
+    (name) => path.join(root, name),
+  );
+  await Promise.all(projects.map((project) => mkdir(project)));
+  const registry = new Registry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => null },
+    { launch: async () => {} },
+    () => {},
+  );
+  const existing = [];
+  for (const project of projects.slice(0, 4)) {
+    existing.push((await service.registerLocation(project)).entry);
+  }
+  for (const entry of existing.slice(0, 3)) {
+    await service.pinEntry(entry.id);
+  }
+
+  const [registered] = await Promise.all([
+    service.registerLocation(projects[4]),
+    service.reorderPinnedEntries([
+      existing[2].id,
+      existing[1].id,
+      existing[0].id,
+    ]),
+    service.removeEntry(existing[3].id),
+  ]);
+
+  const data = await registry.read();
+  assert.equal(registered.created, true);
+  assert.deepEqual(data.pinnedEntryIds, [
+    existing[2].id,
+    existing[1].id,
+    existing[0].id,
+  ]);
+  assert.equal(
+    data.entries.some(({ id }) => id === existing[3].id),
+    false,
+  );
+  assert.equal(
+    data.entries.some(({ id }) => id === registered.entry.id),
+    true,
+  );
 });
 
 test("inspects and registers an explicit project path", async (t) => {
@@ -346,7 +482,7 @@ test("pins unavailable Entries, preserves pin order, and cleans removals", async
   await service.reorderPinnedEntries([charlie.id, bravo.id, alpha.id]);
   await service.unpinEntry(bravo.id);
   await service.pinEntry(bravo.id);
-  assert.deepEqual((await registry.load()).pinnedEntryIds, [
+  assert.deepEqual((await registry.read()).pinnedEntryIds, [
     charlie.id,
     alpha.id,
     bravo.id,
@@ -361,7 +497,7 @@ test("pins unavailable Entries, preserves pin order, and cleans removals", async
   );
 
   await service.removeEntry(alpha.id);
-  assert.deepEqual((await registry.load()).pinnedEntryIds, [
+  assert.deepEqual((await registry.read()).pinnedEntryIds, [
     charlie.id,
     bravo.id,
   ]);

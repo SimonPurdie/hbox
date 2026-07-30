@@ -1,5 +1,6 @@
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   mkdir,
   readFile,
@@ -31,6 +32,9 @@ export class Registry {
   readonly dataDirectory: string;
   readonly registryPath: string;
   readonly iconDirectory: string;
+  private data: RegistryData | null = null;
+  private initialization: Promise<void> | null = null;
+  private updateQueue: Promise<void> = Promise.resolve();
 
   constructor(dataDirectory: string) {
     this.dataDirectory = dataDirectory;
@@ -38,7 +42,54 @@ export class Registry {
     this.iconDirectory = path.join(dataDirectory, "icons");
   }
 
-  async load(): Promise<RegistryData> {
+  async initialize(): Promise<void> {
+    if (this.data) {
+      return;
+    }
+    if (!this.initialization) {
+      this.initialization = this.loadFromDisk()
+        .then((data) => {
+          this.data = data;
+        })
+        .catch((error: unknown) => {
+          this.initialization = null;
+          throw error;
+        });
+    }
+    await this.initialization;
+  }
+
+  async read(): Promise<RegistryData> {
+    await this.initialize();
+    return structuredClone(this.requireData());
+  }
+
+  async update<T>(operation: (data: RegistryData) => T): Promise<T> {
+    await this.initialize();
+    const previous = this.updateQueue;
+    let release!: () => void;
+    this.updateQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      const current = this.requireData();
+      const draft = structuredClone(current);
+      const result = operation(draft);
+      if (isPromiseLike(result)) {
+        throw new Error("Registry updates must not perform asynchronous work.");
+      }
+      if (!isDeepStrictEqual(current, draft)) {
+        await this.saveToDisk(draft);
+        this.data = draft;
+      }
+      return result;
+    } finally {
+      release();
+    }
+  }
+
+  private async loadFromDisk(): Promise<RegistryData> {
     let raw: string;
     try {
       raw = await readFile(this.registryPath, "utf8");
@@ -73,11 +124,18 @@ export class Registry {
     return normalized;
   }
 
-  async save(data: RegistryData): Promise<void> {
+  private async saveToDisk(data: RegistryData): Promise<void> {
     await mkdir(this.dataDirectory, { recursive: true });
     const temporaryPath = `${this.registryPath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
     await writeFile(temporaryPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
     await rename(temporaryPath, this.registryPath);
+  }
+
+  private requireData(): RegistryData {
+    if (!this.data) {
+      throw new Error("HBOX Registry is not initialized.");
+    }
+    return this.data;
   }
 
   iconPath(entryId: string): string {
@@ -266,6 +324,15 @@ function isEntryActionPresentation(value: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    "then" in value &&
+    typeof value.then === "function"
+  );
 }
 
 function isMissingFileError(error: unknown): boolean {
