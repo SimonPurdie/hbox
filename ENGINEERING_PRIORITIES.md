@@ -163,6 +163,8 @@ boundaries.
 
 ## 6. Split large modules along feature boundaries
 
+**Status: complete.**
+
 **Assessment: agree, but do this as incremental behavior-preserving work.**
 
 The direct DOM client and native runtimes remain suitable choices. Some files

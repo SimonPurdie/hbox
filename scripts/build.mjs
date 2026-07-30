@@ -6,6 +6,14 @@ const buildId = `${process.pid}-${Date.now()}`;
 const buildDirectory = path.resolve(`.hbox-build-${buildId}`);
 const outputDirectory = path.resolve("dist");
 const backupDirectory = path.resolve(`.hbox-dist-backup-${buildId}`);
+const windowsSessionSources = [
+  "windows-session-runner.cs",
+  "windows-session-models.cs",
+  "windows-session-command.cs",
+  "windows-session-storage.cs",
+  "windows-session-supervisor.cs",
+  "windows-session-native.cs",
+].map((name) => path.resolve("src/server", name));
 
 async function run(command, args) {
   await new Promise((resolve, reject) => {
@@ -69,6 +77,11 @@ try {
     path.join(buildDirectory, "server", "session-launcher.vbs"),
   );
   await cp(
+    "src/server/wsl-scripts",
+    path.join(buildDirectory, "server", "wsl-scripts"),
+    { recursive: true },
+  );
+  await cp(
     "src/server/hbox-contract.md",
     path.join(buildDirectory, "server", "hbox-contract.md"),
   );
@@ -96,7 +109,7 @@ try {
         "/optimize+",
         "/reference:System.Web.Extensions.dll",
         `/out:${path.join(buildDirectory, "server", "windows-session-runner.exe")}`,
-        path.resolve("src/server/windows-session-runner.cs"),
+        ...windowsSessionSources,
       ]),
     ]);
   }
