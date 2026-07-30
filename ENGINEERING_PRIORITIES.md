@@ -214,18 +214,6 @@ machine. It supports HBOX without adding a .NET SDK prerequisite. Improve
 compiler discovery and its failure message if this path becomes unreliable.
 Do not introduce an SDK-style project only for better tooling.
 
-## 8. Reconsider HTTP routing only when route growth causes friction
-
-**Assessment: the observation is fair, but no change is justified now.**
-
-The router is long, but it is still explicit and understandable. A route table
-would move matching and error mapping into a new abstraction; it would not
-currently remove enough complexity to justify the migration.
-
-Reconsider a small internal router when new endpoints cause repeated matching,
-body parsing, or error-mapping defects. A third-party web framework is not
-needed for the current local application.
-
 ## Decisions to preserve
 
 Keep these foundations unchanged:
