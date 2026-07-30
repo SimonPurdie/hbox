@@ -189,10 +189,23 @@ A watch command would reduce iteration time, but it is not a runtime issue.
 Add it after the coordination work. It must handle TypeScript, static assets,
 native helpers, and Windows server restart clearly.
 
-Keep the normal `start` and in-app Restart paths build-first. HBOX has already
-chosen Restart to mean rebuild and restart, which prevents stale client assets
-and native helpers. A separate command may run an existing build when that is
-useful for diagnostics or automation.
+Make normal `start` and in-app Restart verify that the existing build is
+current. Rebuild only when it is not. Use a build fingerprint rather than Git
+working-tree status: a clean checkout can contain a build from an older
+commit, while an unrelated documentation change can make the working tree
+dirty.
+
+The fingerprint must cover all build inputs, including source files, static
+assets, build scripts, TypeScript configuration, the dependency lock file,
+the target platform, and relevant tool versions. Treat missing expected
+outputs or a build made for another platform as stale. Write the fingerprint
+only after the staged build and swap completes successfully.
+
+Keep an explicit `build` command that always performs a complete build.
+`start` and in-app Restart should use the freshness check, so both retain the
+guarantee that they serve current client assets and native helpers without
+repeating unchanged work. Add tests for changed inputs, missing outputs,
+platform changes, and failed builds that must not update the fingerprint.
 
 Test the final start command with Windows Node, as required by `AGENTS.md`.
 
