@@ -140,6 +140,28 @@ test("starts, reconciles, persists, and cleanly stops a WSL Session", async (t) 
   assert.deepEqual(runtime.cleanups, [started.id]);
 });
 
+test("removes a Session that exits successfully without a stop request", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const runtime = new FakeRuntime();
+  const store = new SessionStore(root);
+  const manager = new SessionManager(
+    store,
+    runtime,
+    { openUrl: async () => {} },
+    { pollIntervalMs: 0, probeUrl: async () => true },
+  );
+  await manager.initialize();
+
+  const started = await manager.startSession(entry, definition);
+  runtime.inspections.set(started.id, { kind: "exited", exitCode: 0 });
+  await manager.reconcileNow();
+
+  assert.deepEqual(await manager.listSessions(), []);
+  assert.deepEqual(runtime.cleanups, [started.id]);
+  assert.deepEqual(await store.load(), []);
+});
+
 test("retains failures and disables destructive actions when identity is uncertain", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "hbox-sessions-"));
   t.after(() => rm(root, { recursive: true, force: true }));

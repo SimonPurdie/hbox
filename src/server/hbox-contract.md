@@ -119,6 +119,11 @@ Windows executable search rules. HBOX resolves executable extensions such as
 The managed program must stay in the foreground. A program that detaches from
 its process cannot use this Session type.
 
+When the managed program exits with code `0`, HBOX treats the Session as
+successfully completed and removes it. A non-zero or unreadable exit code, or
+a process that ends without recording an exit code, leaves a failed Session
+available to restart or forget.
+
 When `stopCommand` is present, HBOX runs it as a separate, short-lived request
 to stop the managed program. If HBOX cannot start it, HBOX uses the native
 graceful signal. Without `stopCommand`, HBOX sends SIGTERM on WSL or a

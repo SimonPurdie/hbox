@@ -421,8 +421,11 @@ export class SessionManager {
       inspection.kind === "exited" ||
       inspection.kind === "missing"
     ) {
-      if (session.stopRequestedAt) {
-        await this.finishStoppedSession(session);
+      if (
+        session.stopRequestedAt ||
+        (inspection.kind === "exited" && inspection.exitCode === 0)
+      ) {
+        await this.finishExitedSession(session);
         return;
       }
       session.status = "failed";
@@ -487,7 +490,7 @@ export class SessionManager {
     }
   }
 
-  private async finishStoppedSession(
+  private async finishExitedSession(
     session: StoredSession,
   ): Promise<void> {
     this.sessions = this.sessions.filter(
