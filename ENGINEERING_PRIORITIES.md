@@ -132,6 +132,8 @@ rule or inspector output contract.
 
 ## 5. Share wire types and small validation primitives
 
+**Status: complete.**
+
 **Assessment: agree, with a narrow scope.**
 
 The client and server duplicate tag priority, Entry DTOs, Session DTOs, action

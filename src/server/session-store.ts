@@ -6,6 +6,12 @@ import type {
   ProcessSessionDefinition,
   SessionStatus,
 } from "./types.js";
+import {
+  isCommand,
+  isEntryLocation,
+  isRecord,
+  isUuid,
+} from "./validation.js";
 
 export const SESSION_STORE_VERSION = 2 as const;
 
@@ -137,26 +143,6 @@ function isProcessSessionDefinition(
   );
 }
 
-function isEntryLocation(value: unknown): value is EntryLocation {
-  return (
-    isRecord(value) &&
-    (
-      (
-        value.kind === "windows" &&
-        typeof value.path === "string" &&
-        path.win32.isAbsolute(value.path)
-      ) ||
-      (
-        value.kind === "wsl" &&
-        typeof value.distribution === "string" &&
-        value.distribution.length > 0 &&
-        typeof value.path === "string" &&
-        value.path.startsWith("/")
-      )
-    )
-  );
-}
-
 function isLegacyWslLocation(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -170,14 +156,6 @@ function isLegacyWslLocation(value: unknown): boolean {
 
 function isNullableCommand(value: unknown): boolean {
   return value === null || isCommand(value);
-}
-
-function isCommand(value: unknown): boolean {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((part) => typeof part === "string" && part.length > 0)
-  );
 }
 
 function isLegacySessionStoreData(
@@ -279,19 +257,6 @@ function isNullableDateString(value: unknown): value is string | null {
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
-}
-
-function isUuid(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value,
-    )
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isMissingFileError(error: unknown): boolean {

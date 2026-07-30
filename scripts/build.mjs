@@ -54,7 +54,7 @@ try {
       "-p",
       "tsconfig.server.json",
       "--outDir",
-      path.join(buildDirectory, "server"),
+      buildDirectory,
     ]),
     run(process.execPath, [
       "node_modules/typescript/bin/tsc",

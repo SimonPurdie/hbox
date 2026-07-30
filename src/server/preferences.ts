@@ -1,12 +1,11 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import type { PreferencesDto } from "./types.js";
 
 export const DEFAULT_INTERFACE_COLOR = "#193b56";
 
-export interface Preferences {
-  interfaceColor: string;
-}
+export type Preferences = PreferencesDto;
 
 export class InvalidPreferencesError extends Error {}
 

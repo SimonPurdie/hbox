@@ -12,7 +12,7 @@ import {
   mergeVisiblePinOrder,
   matchesEntry,
   tagIconFor,
-} from "../dist/public/assets/model.js";
+} from "../dist/public/assets/client/model.js";
 
 const fallback = {
   name: "Folder Name",

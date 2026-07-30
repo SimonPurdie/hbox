@@ -11,11 +11,15 @@ import {
 } from "node:fs/promises";
 import {
   REGISTRY_VERSION,
-  type EntryLocation,
   type EntryPresentation,
   type RegistryData,
   type StoredEntry,
 } from "./types.js";
+import {
+  isEntryLocation,
+  isRecord,
+  isUuid,
+} from "./validation.js";
 
 export interface IconCacheRecord {
   version: 1;
@@ -269,30 +273,8 @@ function isStoredEntry(value: unknown): value is StoredEntry {
     isRecord(value) &&
     typeof value.id === "string" &&
     isUuid(value.id) &&
-    isLocation(value.location) &&
+    isEntryLocation(value.location) &&
     isPresentation(value.lastKnown)
-  );
-}
-
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
-  );
-}
-
-function isLocation(value: unknown): value is EntryLocation {
-  if (!isRecord(value)) {
-    return false;
-  }
-  if (value.kind === "windows") {
-    return typeof value.path === "string" && value.path.length > 0;
-  }
-  return (
-    value.kind === "wsl" &&
-    typeof value.distribution === "string" &&
-    value.distribution.length > 0 &&
-    typeof value.path === "string" &&
-    value.path.startsWith("/")
   );
 }
 
@@ -320,10 +302,6 @@ function isEntryActionPresentation(value: unknown): boolean {
     typeof value.id === "string" &&
     typeof value.label === "string"
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

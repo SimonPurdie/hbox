@@ -8,7 +8,10 @@ import {
   type ClientEntry,
   type ClientSession,
   type EntryDetails,
+  type InstanceStatus,
   type MetadataStatus,
+  type PinOrderRequest,
+  type PreferencesDto,
   type TagIcon,
 } from "./model.js";
 
@@ -274,9 +277,7 @@ async function loadPreferences(): Promise<void> {
         `Preference request failed with status ${response.status}.`,
       );
     }
-    const preferences = (await response.json()) as {
-      interfaceColor: string;
-    };
+    const preferences = (await response.json()) as PreferencesDto;
     interfaceColorInput.value = preferences.interfaceColor;
     interfaceColorInput.dispatchEvent(
       new Event("input", { bubbles: true }),
@@ -288,10 +289,11 @@ async function loadPreferences(): Promise<void> {
 
 async function saveInterfaceColor(color: string): Promise<void> {
   try {
+    const preferences: PreferencesDto = { interfaceColor: color };
     const response = await fetch("/api/preferences", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ interfaceColor: color }),
+      body: JSON.stringify(preferences),
     });
     if (!response.ok) {
       throw new Error(
@@ -675,10 +677,11 @@ async function persistVisiblePinOrder(): Promise<void> {
   renderEntries();
 
   try {
+    const request: PinOrderRequest = { entryIds: nextOrder };
     const response = await fetch("/api/pins/order", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryIds: nextOrder }),
+      body: JSON.stringify(request),
     });
     if (!response.ok) {
       throw new Error(`Pin reorder failed with status ${response.status}.`);
@@ -716,7 +719,7 @@ async function restartServer(): Promise<void> {
     if (!response.ok) {
       throw new Error(`Restart failed with status ${response.status}.`);
     }
-    const current = (await response.json()) as { instanceId: string };
+    const current = (await response.json()) as InstanceStatus;
     await waitForServer(current.instanceId);
     window.location.reload();
   } catch (error) {
@@ -733,7 +736,7 @@ async function waitForServer(previousInstanceId: string): Promise<void> {
         cache: "no-store",
       });
       if (response.ok) {
-        const status = (await response.json()) as { instanceId: string };
+        const status = (await response.json()) as InstanceStatus;
         if (status.instanceId !== previousInstanceId) {
           return;
         }

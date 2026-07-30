@@ -9,6 +9,10 @@ import type {
   ProcessSessionDefinition,
   StartSessionActionDefinition,
 } from "./types.js";
+import {
+  isCommand,
+  isRecord,
+} from "./validation.js";
 
 const runtimePath = process.platform === "win32" ? path.win32 : path;
 
@@ -476,16 +480,6 @@ function isDefinitionId(value: string): boolean {
   return /^[a-z0-9][a-z0-9_-]*$/.test(value);
 }
 
-function isCommand(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every(
-      (part) => typeof part === "string" && part.length > 0,
-    )
-  );
-}
-
 function parseOptionalCommand(value: unknown): string[] | null | undefined {
   if (value === undefined) {
     return null;
@@ -520,10 +514,6 @@ function isActionName(
       value === "terminal" ||
       customActionIds.has(value))
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isMissingFileError(error: unknown): boolean {
