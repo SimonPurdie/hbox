@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
+import { mapConcurrent } from "./concurrency.js";
 import { inspectIntegration } from "./integration-inspector.js";
 import {
   isFolderAvailable,
@@ -75,14 +76,29 @@ export interface RegistrationResult {
   created: boolean;
 }
 
+export interface EntryServiceOptions {
+  refreshConcurrency?: number;
+}
+
 export class EntryService {
+  private readonly refreshConcurrency: number;
+
   constructor(
     private readonly registry: Registry,
     private readonly picker: FolderPicker,
     private readonly launcher: ActionLauncher,
     private readonly warn: (message: string) => void = console.warn,
     private readonly sessionManager?: Pick<SessionManager, "startSession">,
-  ) {}
+    options: EntryServiceOptions = {},
+  ) {
+    this.refreshConcurrency = options.refreshConcurrency ?? 8;
+    if (
+      !Number.isSafeInteger(this.refreshConcurrency) ||
+      this.refreshConcurrency < 1
+    ) {
+      throw new Error("Entry refresh concurrency must be positive.");
+    }
+  }
 
   async initialize(): Promise<void> {
     await this.registry.initialize();
@@ -94,11 +110,13 @@ export class EntryService {
       data.pinnedEntryIds.map((entryId, index) => [entryId, index]),
     );
 
-    const refreshedEntries = await Promise.all(
-      data.entries.map(async (entry) => {
+    const refreshedEntries = await mapConcurrent(
+      data.entries,
+      this.refreshConcurrency,
+      async (entry) => {
         const refreshed = await this.refreshEntry(entry);
         return { original: entry, ...refreshed };
-      }),
+      },
     );
     const changedEntries = refreshedEntries.filter(({ changed }) => changed);
     if (changedEntries.length > 0) {
@@ -381,6 +399,7 @@ export class EntryService {
     const hasCustomIcon = await this.syncCachedIcon(
       entry.id,
       metadata,
+      entry.lastKnown.hasCustomIcon,
     );
     const presentation = { ...metadata.presentation, hasCustomIcon };
 
@@ -401,10 +420,13 @@ export class EntryService {
   private async syncCachedIcon(
     entryId: string,
     metadata: MetadataResult,
+    removeAbsent: boolean = false,
   ): Promise<boolean> {
     const source = metadata.customIconSource;
     if (!source) {
-      await this.registry.removeCachedIcon(entryId);
+      if (removeAbsent) {
+        await this.registry.removeCachedIcon(entryId);
+      }
       return false;
     }
 

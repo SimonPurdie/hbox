@@ -42,6 +42,42 @@ class BlockingIconRegistry extends Registry {
   }
 }
 
+class MeasuringIconRegistry extends Registry {
+  measureIconReads = false;
+  activeIconReads = 0;
+  maximumIconReads = 0;
+  totalIconReads = 0;
+  expectedActive = 0;
+  limitReached = deferred();
+  releaseIconReads = deferred();
+
+  async readIconCacheRecord(entryId) {
+    if (this.measureIconReads) {
+      this.activeIconReads += 1;
+      this.totalIconReads += 1;
+      this.maximumIconReads = Math.max(
+        this.maximumIconReads,
+        this.activeIconReads,
+      );
+      if (this.activeIconReads === this.expectedActive) {
+        this.limitReached.resolve();
+      }
+      await this.releaseIconReads.promise;
+      this.activeIconReads -= 1;
+    }
+    return await super.readIconCacheRecord(entryId);
+  }
+}
+
+class CacheRemovalRegistry extends Registry {
+  cacheRemovals = 0;
+
+  async removeCachedIcon(entryId) {
+    this.cacheRemovals += 1;
+    await super.removeCachedIcon(entryId);
+  }
+}
+
 test("keeps a missing Entry visible from its last-known cache and rejects actions", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "hbox-service-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -205,6 +241,63 @@ test("metadata refresh cannot undo an overlapping pin", async (t) => {
   const data = await registry.read();
   assert.deepEqual(data.pinnedEntryIds, [registration.entry.id]);
   assert.equal(data.entries[0].lastKnown.name, "After refresh");
+});
+
+test("bounds concurrent Entry refresh and completes every Entry", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-refresh-limit-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const registry = new MeasuringIconRegistry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => null },
+    { launch: async () => {} },
+    () => {},
+    undefined,
+    { refreshConcurrency: 3 },
+  );
+  for (let index = 0; index < 10; index += 1) {
+    const project = path.join(root, `Project ${index}`);
+    await mkdir(path.join(project, ".hbox"), { recursive: true });
+    await writeFile(
+      path.join(project, ".hbox", "icon.svg"),
+      '<svg viewBox="0 0 24 24"><path d="M2 2h20v20H2z"/></svg>',
+    );
+    await service.registerLocation(project);
+  }
+  registry.expectedActive = 3;
+  registry.measureIconReads = true;
+
+  const listing = service.listEntries();
+  await registry.limitReached.promise;
+  assert.equal(registry.maximumIconReads, 3);
+  assert.equal(registry.totalIconReads, 3);
+  registry.releaseIconReads.resolve();
+
+  assert.equal((await listing).length, 10);
+  assert.equal(registry.maximumIconReads, 3);
+  assert.equal(registry.totalIconReads, 10);
+});
+
+test("does not remove an absent icon cache during routine refresh", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-cache-cleanup-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  await mkdir(project);
+  const registry = new CacheRemovalRegistry(path.join(root, "app-data"));
+  const service = new EntryService(
+    registry,
+    { pick: async () => null },
+    { launch: async () => {} },
+    () => {},
+  );
+  const registration = await service.registerLocation(project);
+
+  await service.listEntries();
+  await service.getEntryDetails(registration.entry.id);
+  assert.equal(registry.cacheRemovals, 0);
+
+  await service.removeEntry(registration.entry.id);
+  assert.equal(registry.cacheRemovals, 1);
 });
 
 test("registration, pin reorder, and removal preserve every overlapping change", async (t) => {

@@ -43,6 +43,7 @@ export async function readEntryMetadata(
   const folderPath = locationAccessPath(location);
   const metadataPath = runtimePath.join(folderPath, ".hbox", "entry.json");
   const iconPath = runtimePath.join(folderPath, ".hbox", "icon.svg");
+  const customIconSource = readCustomIconSource(iconPath, warn);
   const fallback: EntryPresentation = {
     name: inferredName(location),
     tags: [],
@@ -80,40 +81,33 @@ export async function readEntryMetadata(
     }
   }
 
+  return {
+    presentation,
+    actionDefinitions,
+    sessionDefinitions,
+    customIconSource: await customIconSource,
+    metadataStatus,
+  };
+}
+
+async function readCustomIconSource(
+  iconPath: string,
+  warn: (message: string) => void,
+): Promise<CustomIconSource | null> {
   try {
     const iconInfo = await stat(iconPath);
-    if (!iconInfo.isFile()) {
-      return {
-        presentation,
-        actionDefinitions,
-        sessionDefinitions,
-        customIconSource: null,
-        metadataStatus,
-      };
-    }
-
-    return {
-      presentation,
-      actionDefinitions,
-      sessionDefinitions,
-      customIconSource: {
-        path: iconPath,
-        modifiedTimeMs: iconInfo.mtimeMs,
-        size: iconInfo.size,
-      },
-      metadataStatus,
-    };
+    return iconInfo.isFile()
+      ? {
+          path: iconPath,
+          modifiedTimeMs: iconInfo.mtimeMs,
+          size: iconInfo.size,
+        }
+      : null;
   } catch (error) {
     if (!isMissingFileError(error)) {
       warn(`Could not read ${iconPath}: ${errorMessage(error)}`);
     }
-    return {
-      presentation,
-      actionDefinitions,
-      sessionDefinitions,
-      customIconSource: null,
-      metadataStatus,
-    };
+    return null;
   }
 }
 

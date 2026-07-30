@@ -77,6 +77,8 @@ writers.
 
 ## 3. Bound Entry refresh work
 
+**Status: complete.**
+
 **Assessment: agree with the immediate controls; defer speculative caching.**
 
 `listEntries()` refreshes every Entry with an unrestricted `Promise.all`.

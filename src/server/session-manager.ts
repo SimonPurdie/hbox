@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { mapConcurrent } from "./concurrency.js";
 import type { ActionLauncher } from "./launcher.js";
 import {
   type StoredSession,
@@ -619,28 +620,6 @@ export class SessionManager {
     }, this.pollIntervalMs);
     this.pollTimer.unref();
   }
-}
-
-async function mapConcurrent<T>(
-  values: readonly T[],
-  concurrency: number,
-  operation: (value: T) => Promise<void>,
-): Promise<void> {
-  let nextIndex = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, values.length) },
-    async () => {
-      for (;;) {
-        const index = nextIndex;
-        nextIndex += 1;
-        if (index >= values.length) {
-          return;
-        }
-        await operation(values[index]!);
-      }
-    },
-  );
-  await Promise.all(workers);
 }
 
 function toClientSession(session: StoredSession): ClientSession {
