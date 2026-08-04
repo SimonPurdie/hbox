@@ -439,29 +439,49 @@ function parseActionDefinitions(
       );
       valid = false;
     }
-    if (
-      typeof candidate.starts !== "string" ||
-      !sessionIds.has(candidate.starts)
-    ) {
+    const starts = parseActionStarts(candidate.starts, sessionIds);
+    if (!starts) {
       diagnostics.push(
         createDiagnostic(
           `${definitionPath}.starts`,
           "unknown_session",
-          "must reference an accepted Session ID.",
+          Array.isArray(candidate.starts)
+            ? "must be a non-empty array of accepted Session IDs."
+            : "must reference an accepted Session ID.",
         ),
       );
       valid = false;
     }
-    if (!valid) {
+    if (!valid || starts === null) {
       continue;
     }
     definitions.push({
       id,
       label: (candidate.label as string).trim(),
-      starts: candidate.starts as string,
+      starts,
     });
   }
   return definitions;
+}
+
+function parseActionStarts(
+  value: unknown,
+  sessionIds: ReadonlySet<string>,
+): string | string[] | null {
+  if (typeof value === "string") {
+    return sessionIds.has(value) ? value : null;
+  }
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every(
+      (sessionId): sessionId is string =>
+        typeof sessionId === "string" && sessionIds.has(sessionId),
+    )
+  ) {
+    return null;
+  }
+  return [...value];
 }
 
 function createDiagnostic(

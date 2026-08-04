@@ -38,7 +38,7 @@ export interface EntryActionPresentation {
 
 export interface StartSessionActionDefinition
   extends EntryActionPresentation {
-  starts: string;
+  starts: string | string[];
 }
 
 export interface ProcessSessionDefinition {

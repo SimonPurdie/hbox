@@ -36,7 +36,7 @@ runtime, but the integration helper requires this file.
   "actions": {
     "start-app": {
       "label": "Start app",
-      "starts": "dev-server"
+      "starts": ["dev-server", "asset-watcher"]
     }
   },
   "sessions": {
@@ -48,6 +48,11 @@ runtime, but the integration helper requires this file.
       "readyUrl": "http://127.0.0.1:5173",
       "openUrl": "http://127.0.0.1:5173",
       "singleInstance": true
+    },
+    "asset-watcher": {
+      "type": "process",
+      "label": "Asset watcher",
+      "command": ["npm", "run", "watch-assets"]
     }
   }
 }
@@ -91,9 +96,14 @@ custom actions can only start declared process Sessions.
 - An ID must match `[a-z0-9][a-z0-9_-]*`.
 - An ID cannot be `folder` or `terminal`.
 - `label` must be a non-empty string after trim.
-- `starts` must be the ID of an accepted Session in the same file.
+- `starts` must be either the ID of an accepted Session in the same file or a
+  non-empty array of accepted Session IDs. The string form remains supported.
 
 HBOX omits an action when any requirement fails.
+
+When `starts` contains multiple IDs, HBOX starts the Sessions concurrently.
+Each start is tracked as its own Session with the lifecycle behavior of its
+referenced definition.
 
 ## Process Sessions
 

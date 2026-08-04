@@ -246,15 +246,30 @@ export class EntryService {
     const actionDefinition = metadata.actionDefinitions.find(
       (candidate) => candidate.id === action,
     );
-    const sessionDefinition = actionDefinition
-      ? metadata.sessionDefinitions.find(
-          (candidate) => candidate.id === actionDefinition.starts,
-        )
-      : undefined;
-    if (!actionDefinition || !sessionDefinition || !this.sessionManager) {
+    const sessionIds = actionDefinition
+      ? typeof actionDefinition.starts === "string"
+        ? [actionDefinition.starts]
+        : actionDefinition.starts
+      : [];
+    const sessionDefinitions = sessionIds.flatMap((sessionId) => {
+      const definition = metadata.sessionDefinitions.find(
+        (candidate) => candidate.id === sessionId,
+      );
+      return definition ? [definition] : [];
+    });
+    const sessionManager = this.sessionManager;
+    if (
+      !actionDefinition ||
+      sessionDefinitions.length !== sessionIds.length ||
+      !sessionManager
+    ) {
       throw new ActionNotFoundError(action);
     }
-    await this.sessionManager.startSession(entry, sessionDefinition);
+    await Promise.all(
+      sessionDefinitions.map((definition) =>
+        sessionManager.startSession(entry, definition),
+      ),
+    );
   }
 
   async resolveBuiltInLaunch(

@@ -194,7 +194,12 @@ test("loads validated action and process Session definitions", async (t) => {
     JSON.stringify({
       actions: {
         "start-app": { label: "Start app", starts: "dev-server" },
+        "start-stack": {
+          label: "Start stack",
+          starts: ["dev-server", "asset-watcher"],
+        },
         broken: { label: "Broken", starts: "missing" },
+        "broken-stack": { label: "Broken stack", starts: [] },
       },
       sessions: {
         "dev-server": {
@@ -204,6 +209,11 @@ test("loads validated action and process Session definitions", async (t) => {
           stopCommand: ["npm", "run", "stop"],
           readyUrl: "http://127.0.0.1:5173",
           openUrl: "http://127.0.0.1:5173",
+        },
+        "asset-watcher": {
+          type: "process",
+          label: "Asset watcher",
+          command: ["npm", "run", "watch-assets"],
         },
       },
     }),
@@ -219,6 +229,11 @@ test("loads validated action and process Session definitions", async (t) => {
       label: "Start app",
       starts: "dev-server",
     },
+    {
+      id: "start-stack",
+      label: "Start stack",
+      starts: ["dev-server", "asset-watcher"],
+    },
   ]);
   assert.deepEqual(metadata.sessionDefinitions, [
     {
@@ -231,7 +246,21 @@ test("loads validated action and process Session definitions", async (t) => {
       openUrl: "http://127.0.0.1:5173/",
       singleInstance: true,
     },
+    {
+      id: "asset-watcher",
+      type: "process",
+      label: "Asset watcher",
+      command: ["npm", "run", "watch-assets"],
+      stopCommand: null,
+      readyUrl: null,
+      openUrl: null,
+      singleInstance: true,
+    },
   ]);
+  assert.ok(metadata.diagnostics.some((diagnostic) =>
+    diagnostic.message ===
+      "actions.broken-stack.starts must be a non-empty array of accepted Session IDs."
+  ));
 });
 
 test("reports exact diagnostics for every rejected integration field", async (t) => {

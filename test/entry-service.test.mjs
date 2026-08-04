@@ -437,6 +437,81 @@ test("starts a declared process Session through a custom Entry action", async (t
   );
 });
 
+test("starts and independently tracks multiple Sessions from one action", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "hbox-actions-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = path.join(root, "project");
+  await mkdir(path.join(project, ".hbox"), { recursive: true });
+  await writeFile(
+    path.join(project, ".hbox", "entry.json"),
+    JSON.stringify({
+      actions: {
+        "start-stack": {
+          label: "Start stack",
+          starts: ["dev-server", "asset-watcher"],
+        },
+      },
+      sessions: {
+        "dev-server": {
+          type: "process",
+          label: "Development server",
+          command: ["npm", "run", "dev"],
+        },
+        "asset-watcher": {
+          type: "process",
+          label: "Asset watcher",
+          command: ["npm", "run", "watch-assets"],
+        },
+      },
+    }),
+  );
+
+  const starts = [];
+  const releaseFirstStart = deferred();
+  const secondStartBegan = deferred();
+  t.after(() => releaseFirstStart.resolve());
+  const service = new EntryService(
+    new Registry(path.join(root, "app-data")),
+    { pick: async () => project },
+    { launch: async () => {}, openUrl: async () => {} },
+    () => {},
+    {
+      startSession: async (entry, definition) => {
+        starts.push({ entryId: entry.id, definitionId: definition.id });
+        if (definition.id === "dev-server") {
+          await releaseFirstStart.promise;
+        } else {
+          secondStartBegan.resolve();
+        }
+      },
+    },
+  );
+  const registration = await service.registerFromPicker();
+
+  const action = service.performAction(registration.entry.id, "start-stack");
+  let timeout;
+  try {
+    await Promise.race([
+      secondStartBegan.promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("The second Session start was delayed.")),
+          1_000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+  releaseFirstStart.resolve();
+  await action;
+
+  assert.deepEqual(starts, [
+    { entryId: registration.entry.id, definitionId: "dev-server" },
+    { entryId: registration.entry.id, definitionId: "asset-watcher" },
+  ]);
+});
+
 test("reports the canonical built-in icon source in details", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "hbox-details-"));
   t.after(() => rm(root, { recursive: true, force: true }));

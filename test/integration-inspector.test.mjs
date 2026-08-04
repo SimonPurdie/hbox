@@ -17,6 +17,10 @@ test("inspects effective metadata and validates a custom icon", async (t) => {
       defaultAction: "start-app",
       actions: {
         "start-app": { label: "Start app", starts: "dev-server" },
+        "start-stack": {
+          label: "Start stack",
+          starts: ["dev-server", "asset-watcher"],
+        },
       },
       sessions: {
         "dev-server": {
@@ -26,6 +30,11 @@ test("inspects effective metadata and validates a custom icon", async (t) => {
           stopCommand: ["npm", "run", "stop"],
           readyUrl: "http://127.0.0.1:5173",
           openUrl: "http://127.0.0.1:5173",
+        },
+        "asset-watcher": {
+          type: "process",
+          label: "Asset watcher",
+          command: ["npm", "run", "watch-assets"],
         },
       },
     }),
@@ -50,6 +59,11 @@ test("inspects effective metadata and validates a custom icon", async (t) => {
       id: "start-app",
       label: "Start app",
       starts: "dev-server",
+    },
+    {
+      id: "start-stack",
+      label: "Start stack",
+      starts: ["dev-server", "asset-watcher"],
     },
   ]);
   assert.equal(result.effective.sessions[0].singleInstance, true);
